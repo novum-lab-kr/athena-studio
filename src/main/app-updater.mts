@@ -170,7 +170,7 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
       file,
       list,
       cwd: APP_ROOT,
-      // postinstall 의 dev-app.js make 는 건너뛴다 — 켜 둔 .dev-app/Athena.app 을 바꿔 끼우지 않게(다시 켤 때 start 가 맞춘다)
+      // postinstall 의 dev-app.js make 는 건너뛴다 — 켜 둔 .dev-app/Athena Dev.app 을 바꿔 끼우지 않게(다시 켤 때 start 가 맞춘다)
       env: core.childEnv(process.env, { ATHENA_STUDIO_SKIP_DEV_APP_MAKE: '1' }),
       onSpawn: (pid) => (installPid = pid),
       onOutput: (chunk) => appendLog(chunk),

@@ -1,8 +1,9 @@
-// 개발용 Athena.app — `npm start` 로 켜면 맥 메뉴 막대 · Dock · ⌘Tab 이 node_modules 의 Electron.app 이름(Electron)을 쓴다.
-// 그래서 Electron.app 을 레포 안 무시 폴더(.dev-app/)에 Athena.app 으로 복제하고 이름 · 아이콘만 바꿔 그걸로 켠다(node_modules 는 건드리지 않는다).
+// 개발용 Athena Dev.app — `npm start` 로 켜면 맥 메뉴 막대 · Dock · ⌘Tab 이 node_modules 의 Electron.app 이름(Electron)을 쓴다.
+// 그래서 Electron.app 을 레포 안 무시 폴더(.dev-app/)에 Athena Dev.app 으로 복제하고 이름 · 아이콘(주황 DEV 띠)만 바꿔 그걸로 켠다(node_modules 는 건드리지 않는다).
+// 배포판(Athena Studio · scripts/package-mac.js)과 Dock · ⌘Tab 에서 갈리게 이름 · 아이콘을 따로 둔다. Dock · Finder 의 이름은 번들 폴더 이름을 따른다(CFBundleDisplayName 만으로는 안 바뀐다).
 // 앱 데이터 폴더는 main 이 정한다 — 개발 앱은 'Athena Studio Dev' · 데몬 접속 파일 daemon-dev.json(배포판과 겹치지 않게 · src/lib/studio-home.js appIdentity).
 //   node scripts/dev-app.js make    (postinstall) 없거나 Electron 버전 · 아이콘이 바뀌었으면 다시 만든다
-//   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
+//   node scripts/dev-app.js start   (npm start) Athena Dev.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
 //                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 두고(src/lib/studio-home.js)
 //                                   화면(src/renderer)을 Vite 로 dist/renderer 에 빌드한다(vite.config.mts). 빌드가 실패하면 이전 빌드로 켜고 경고 · 이전 빌드가 없으면 켜지 않는다
 //   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>]
@@ -26,7 +27,9 @@ const changelogVersions = require('./changelog-versions')
 const os = require('os')
 
 const ROOT = path.join(__dirname, '..')
-const APP_NAME = 'Athena'
+const APP_NAME = 'Athena Dev'
+// 옛 이름으로 만든 복사본 — 그걸로 뜬 프로세스(앱 · 데몬 · pane CLI 의 ATHENA_STUDIO_NODE)가 없을 때 지운다(removeLegacy)
+const LEGACY_NAMES = ['Athena']
 const DEV_APP_VERSION = 3 // 만드는 방법이 바뀌면 올린다(있던 복사본을 다시 만든다)
 const BASE_BUNDLE_ID = 'kr.novum-lab.athena-studio.dev'
 const SOURCE = path.join(ROOT, 'node_modules', 'electron', 'dist', 'Electron.app')
@@ -34,7 +37,7 @@ const TARGET = path.join(ROOT, '.dev-app', `${APP_NAME}.app`)
 const BINARY = path.join(TARGET, 'Contents', 'MacOS', 'Electron')
 // 무엇으로 만들었는지 — 번들 밖에 둔다(번들 안에 쓰면 서명이 깨진다)
 const MARKER = path.join(ROOT, '.dev-app', `${APP_NAME}.json`)
-const ICON = path.join(ROOT, 'src', 'renderer', 'assets', 'logo', 'athena-app-icon.png') // 1024 · 둥근 사각형 앱 아이콘
+const ICON = path.join(ROOT, 'src', 'renderer', 'assets', 'logo', 'athena-dev-app-icon.png') // 1024 · 앱 아이콘 아래쪽에 주황 DEV 띠(main.mts APP_ICON 과 같다)
 
 // git 워크트리의 복사본은 번들 ID 를 따로 준다 — 같은 ID 복사본이 여럿이면 맥이 알림 · Dock · Finder 에서 아무거나 골라 켠다.
 // 메인 체크아웃은 옛 ID 그대로(맥 알림 허용 설정을 잃지 않게). 앱 데이터 · 데몬 접속 파일은 번들 ID 가 아니라 appIdentity(studio-home.js)가 정하니 갈리지 않는다
@@ -128,12 +131,38 @@ function withLock(work) {
 
 function make() {
   if (process.platform !== 'darwin' || !fs.existsSync(SOURCE)) return false
-  if (isCurrent()) return true
+  let made = isCurrent()
   try {
     // 기다리는 사이 다른 쪽이 만들었으면 그걸 쓴다
-    return withLock(() => isCurrent() || build())
+    if (!made) made = withLock(() => isCurrent() || build())
   } catch {
-    return false
+    made = false
+  }
+  if (made) removeLegacy()
+  return made
+}
+
+// 이 번들 안의 실행 파일로 도는 프로세스가 있는지 — ps 는 실행 파일 경로(comm)만 읽는다(인자 · 환경은 읽지 않는다). 못 읽으면 쓰는 중으로 본다
+function runningFrom(bundle) {
+  try {
+    const prefixes = [bundle, fs.realpathSync(bundle)].map((dir) => dir + path.sep)
+    const commands = execFileSync('ps', ['-axo', 'comm='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n')
+    return commands.some((line) => prefixes.some((prefix) => line.trim().startsWith(prefix)))
+  } catch {
+    return true
+  }
+}
+
+// 이름을 바꾸기 전 복사본(.dev-app/Athena.app)을 치운다 — 데몬은 앱보다 오래 살고 pane 이 그 실행 파일을 부르니 쓰는 중이면 남기고 다음에 켤 때 다시 본다
+function removeLegacy() {
+  for (const name of LEGACY_NAMES) {
+    const bundle = path.join(ROOT, '.dev-app', `${name}.app`)
+    try {
+      if (!fs.existsSync(bundle) || runningFrom(bundle)) continue
+      fs.rmSync(bundle, { recursive: true, force: true })
+      fs.rmSync(path.join(ROOT, '.dev-app', `${name}.json`), { force: true })
+      console.log(`[dev-app] 옛 개발 앱 ${name}.app 을 지웠어요`)
+    } catch {}
   }
 }
 
@@ -283,7 +312,7 @@ async function start(args, { fromUpdate = false, installTried = false } = {}) {
   const launch = (file) => {
     const current = spawn(file, ['.', ...args], { cwd: ROOT, stdio: 'inherit' })
     child = current
-    // Athena.app 을 못 켜면(바꿔 끼우는 순간 등) Electron 그대로
+    // Athena Dev.app 을 못 켜면(바꿔 끼우는 순간 등) Electron 그대로
     current.on('error', (error) => {
       if (file === BINARY) return launch(require('electron'))
       console.error(`[dev-app] 켜지 못했어요: ${error.message}`)
@@ -466,7 +495,7 @@ async function testStop(args) {
 }
 
 const [command, ...rest] = process.argv.slice(2)
-// 켜 둔 앱 아래에서 도는 npm install(⚙ 업데이트)은 postinstall 의 make 를 건너뛰게 한다 — 실행 중인 Athena.app 을 바꿔 끼우지 않게. 다시 켤 때 start 가 맞춘다
+// 켜 둔 앱 아래에서 도는 npm install(⚙ 업데이트)은 postinstall 의 make 를 건너뛰게 한다 — 실행 중인 Athena Dev.app 을 바꿔 끼우지 않게. 다시 켤 때 start 가 맞춘다
 if (command === 'make' && process.env.ATHENA_STUDIO_SKIP_DEV_APP_MAKE) console.log('[dev-app] 개발 앱 만들기를 건너뛰어요(앱이 켜진 채 설치) — 다시 켤 때 맞춰요')
 else if (command === 'make') make()
 else if (command === 'start') start(rest)

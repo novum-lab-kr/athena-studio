@@ -130,7 +130,7 @@ export function clearPending(root: string): void {
   fs.rmSync(pendingFile(root), { force: true })
 }
 
-// ── 다시 빌드할 것 표시 — 업데이트로 받은 뒤 아직 화면 · 코어 번들 · 개발 앱(Athena.app)을 새로 맞추지 못했다(start 가 맞추고 지운다).
+// ── 다시 빌드할 것 표시 — 업데이트로 받은 뒤 아직 화면 · 코어 번들 · 개발 앱(Athena Dev.app)을 새로 맞추지 못했다(start 가 맞추고 지운다).
 // 설치 표시와 따로다: 설치가 끝났어도 `[나중에]` 뒤 Dock · Finder 로 켜면 start 를 거치지 않아 옛 빌드로 뜬다
 export const rebuildFile = (root: string) => path.join(root, '.dev-app', 'rebuild-pending.json')
 
