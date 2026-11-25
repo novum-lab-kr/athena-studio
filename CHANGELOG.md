@@ -50,6 +50,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent
+- Fix more server read commands needing confirmation — loginctl show · list, git remote -v
 
 ## 0.71 (v0.71.0 – · Nov 21, 2026)
 

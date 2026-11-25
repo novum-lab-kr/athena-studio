@@ -286,5 +286,6 @@
   "Fix Work list stuck with closed panes — board refresh stopped on a broken link in plans": "[作業] リストに閉じた pane が残る問題を修正 — plans の壊れたリンクで更新停止",
   "Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent": "複数エージェント計画書の PR オフのリポジトリ分をアテナがマージできない問題を修正",
   "Fix server read commands needing confirmation — quoted variables, systemctl --failed": "サーバーの読み取りコマンドが確認を求めていた問題を修正 — 引用符内の変数 · systemctl --failed",
-  "Fix answered requests staying in Work — server confirmations, unread answers after 24h": "回答済みリクエストが[作業]に残る問題を修正 — サーバー確認 · 24時間未受信の回答"
+  "Fix answered requests staying in Work — server confirmations, unread answers after 24h": "回答済みリクエストが[作業]に残る問題を修正 — サーバー確認 · 24時間未受信の回答",
+  "Fix more server read commands needing confirmation — loginctl show · list, git remote -v": "サーバー読み取りコマンドの確認をさらに削減 — loginctl show · list · git remote -v"
 }
