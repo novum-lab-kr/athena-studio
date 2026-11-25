@@ -750,7 +750,7 @@ echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 if [ -z "${START_STATE:-}" ] && [ -n "$LEAD_PANE" ]; then
   START_STATE="$("$SCREEN" pane wait-start "$PANE" --timeout "$(( ${ATHENA_WAIT_START_SECONDS:-30} * 1000 ))" 2>/dev/null)" || START_STATE=""
 fi
-[ -z "$START_STATE" ] || echo "   시작 확인: $START_STATE"
+[ -z "${START_STATE:-}" ] || echo "   시작 확인: $START_STATE"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
 if [ "$ROLE" = reviewer ] && [ "$AGENT" != security-reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
 
