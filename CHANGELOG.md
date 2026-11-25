@@ -49,6 +49,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Add server problem alerts — Mac notification and phone push, checked every 5 minutes
 
 ### Fixed
+- Fix the pack bar hiding during a core update — shows the last pack list
 - Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent
 - Fix more server read commands needing confirmation — loginctl show · list, git remote -v
 - Fix PR auto review stopping after 2 reviews — up to 3 reviews for every PR

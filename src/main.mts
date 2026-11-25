@@ -586,6 +586,8 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     setLastPackFile: (file) => (lastPackFile = file),
     launchWelcome: () => launchWelcome,
     setLaunchWelcome: (value) => (launchWelcome = value),
+    updating: () => updateGate.active(),
+    packListFile: () => path.join(app.getPath('userData'), 'pack-lists.json'),
   })
   // 떼어 낸 서랍 창 — [새 창으로] 를 누르면 웹 · 시뮬레이터 두 탭이 함께 옮겨 가는 창(옆 브라우저 · 시뮬레이터보다 먼저 — 둘이 그 창을 host 로 쓴다)
   installDrawerWindow(ctx, { appBackground: APP_BACKGROUND })
@@ -1367,8 +1369,9 @@ async function runCoreUpdateInBackground(): Promise<void> {
 function afterCoreUpdate({ changed, notice }: { changed: boolean; notice: boolean }): void {
   const front = frontCtx()
   if (notice) void showCoreUpdateNotice(front && front.win)
-  if (!changed) return
+  // 바뀐 본체가 없어도 다시 읽는다 — 업데이트 중에 보인 저장 목록을 지금 목록으로
   refreshAllPacks()
+  if (!changed) return
   // 업데이트가 새 코어로 올리며 끈 현황판은 다시 띄운다
   for (const ctx of packWindows) if (ctx.ensureBoard) ctx.ensureBoard().catch(() => {})
 }

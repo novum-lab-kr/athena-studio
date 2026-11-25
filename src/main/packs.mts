@@ -81,10 +81,12 @@ type PacksDeps = {
   setLastPackFile: (file: string | null) => void
   launchWelcome: () => boolean | null
   setLaunchWelcome: (value: boolean) => void
+  updating: () => boolean // 코어 업데이트 중(core-runner updateGate) — 팩 명령이 끝날 때까지 기다린다
+  packListFile: () => string // 마지막으로 읽은 팩 목록을 남기는 파일(앱 데이터)
 }
 
 export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
-  const { app, dialog, Menu, say, studio, runPack, contractBlock, packWindows, openPackIds, refreshAllPacks, ctxOfBody, openBody, daemonOld, restoreArmedFor, disarmRestore, setLastPackFile, launchWelcome, setLaunchWelcome } = deps
+  const { app, dialog, Menu, say, studio, runPack, contractBlock, packWindows, openPackIds, refreshAllPacks, ctxOfBody, openBody, daemonOld, restoreArmedFor, disarmRestore, setLastPackFile, launchWelcome, setLaunchWelcome, updating, packListFile } = deps
   // 옛 main.js 의 지역 daemonCall 과 같은 함수(ctx.daemonCall 은 창을 만들 때 한 번 붙고 바뀌지 않는다)
   const daemonCall = ctx.daemonCall
   // ctx 에 붙인 것을 이 안에서 부를 때(옛 main.js 처럼 ctx 로 찾는다)
@@ -104,7 +106,9 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) {
       ctx.packState = { supported: false }
     } else {
-      const dir = ctx.athenaDir
+      const dir = ctx.athenaDir as string
+      // 코어 업데이트 중이면 pack list 가 업데이트가 끝날 때까지 기다린다 — 그동안 팩 줄이 숨지 않게 마지막으로 읽은 목록을 먼저 보낸다
+      if (updating()) showWhileUpdating(dir)
       const listed = packModel.normalizePackList(await runPack(['list'], { dir }))
       // 읽는 사이 이 창이 다른 본체로 다시 묶였으면(팩 바꾸기 — 처음 여는 팩은 rebindBody 전에 refreshAllPacks 가 돈다) 옛 본체 목록이다.
       // 늦게 끝난 옛 목록이 새 팩 상태를 덮으면 팩 줄이 옛 팩으로 돌아가고 창이 그 팩으로 묶인 줄 안다 — 버리고 지금 본체로 다시 읽는다
@@ -114,12 +118,28 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
       // welcome — 팩이 하나도 없을 때 시작 화면 · launchWelcome — 켤 때 시작 화면(팩이 있어도) · recent — 시작 화면 '내 팩' 목록. 규칙은 pack.js 한 곳에서만
       // body — 이 목록을 읽은 본체(Explorer 제목이 지금 본체의 팩 이름인지 본다)
       ctx.packState = { ...listed, body: dir, welcome: packModel.showPackWelcome(listed), launchWelcome: launchWelcome() === true, recent: packModel.recentPacks(listed as Parameters<typeof packModel.recentPacks>[0]) }
+      if (listed.supported) {
+        try {
+          packModel.savePackList(packListFile(), dir, listed)
+        } catch {} // 남기지 못해도 지금 목록은 그대로 보인다
+      }
     }
     // 열린 팩 창들 — 팩 줄의 '열려 있음' 점(다른 창 목록이 바뀌어도 보이게 모든 창에)
     for (const each of packWindows) each.send('pack:state', { ...each.packState, openIds: openPackIds() })
     return { ...ctx.packState, openIds: openPackIds() }
   }
   ctx.refreshPacks = refreshPacks
+
+  // 이 창이 이 본체 목록을 아직 못 받았으면 저장 목록으로 채운다(시작 화면은 실제 목록으로 정한다 — welcome · launchWelcome 끔).
+  // 이미 있어도 다시 보낸다 — 화면이 다 읽기 전(창 focus 의 새로 읽기)에 보낸 것은 화면이 놓친다
+  function showWhileUpdating(dir: string): void {
+    if (!ctx.packState.supported || ctx.packState.body !== dir) {
+      const saved = packModel.savedPackList(packListFile(), dir)
+      if (!saved || !saved.supported) return
+      ctx.packState = { ...saved, body: dir, welcome: false, launchWelcome: false, recent: packModel.recentPacks(saved as Parameters<typeof packModel.recentPacks>[0]) }
+    }
+    for (const each of packWindows) each.send('pack:state', { ...each.packState, openIds: openPackIds() })
+  }
 
   // 레지스트리(<데이터>/config.json) 감시 — pane 안 /setup 의 이름 바꾸기(renameNewSlot)는 앱을 거치지 않아 창이 앞에 있어도 목록이 낡는다.
   // 파일은 임시 파일 → rename 으로 바뀌므로 파일이 아니라 폴더를 감시하고 config.json 이름만 본다(work.mts 요청 폴더 감시와 같은 틀).
