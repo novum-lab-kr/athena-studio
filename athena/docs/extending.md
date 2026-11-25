@@ -44,8 +44,8 @@ argument-hint: "<인자 예시>"
 - 공통 프로필은 `.claude/agents/<이름>.md` 에 둔다. Claude 는 `--agent`, Codex 는 `delegate.sh --engine codex` 가 프로필 본문을 명시적으로 싣는다. 레포 담당은 팩 `agents/` · `pack.json` 에 등록하고 `bin/athena pack link` 로 연결한다
 - frontmatter의 `description`이 아테나가 라우팅할 때 읽는 문장이다. "어떤 요청이면 이 에이전트"를 구체적으로 적는다
 - description 안에 콜론+공백(`: `)이 들어가면 YAML이 깨진다
-- 담당 레포가 있으면 `tools`와 본문에 레포 절대경로·검증 명령을 적는다 (기존 `.claude/agents/*.md` 참고)
-- `tools` 에는 기존 FE 에이전트와 같은 **Atlassian 읽기 전용 도구 목록**을 그대로 붙인다(Jira·Confluence 읽기 — 와일드카드 `mcp__claude_ai_Atlassian__*` 는 쓰기까지 열리므로 쓰지 않는다)
+- 레포 담당 에이전트(층 fe · be · app)는 `bin/athena scaffold` · `repo add` 가 팩 템플릿 `docs/templates/pack/agent.md` 로 만든다 — 경로는 `repos/<레포>` · 검증은 `scripts/verify/<레포>.sh`. 서버 담당(`<이름>-ops`)은 `server add` 가 `server-agent.md` 로. 손으로 만들 때도 이 틀을 따른다
+- Atlassian 읽기 도구(Jira · Confluence)는 **Jira · Confluence 를 쓰는 회사용 선택**이다 — 코어 `reviewer` 에만 붙어 있고 팩 에이전트 템플릿에는 없다. 팩 에이전트에도 붙이려면 `pack.json` `agentTools` 에 도구 이름을 하나씩(scaffold 가 새로 만드는 프로필 `tools` 끝에 더한다 — 이미 있는 프로필은 손으로). 와일드카드 `mcp__claude_ai_Atlassian__*` 는 쓰기까지 열리므로 쓰지 않는다
 
 ## 같이 갱신할 곳
 | 파일 | 고칠 곳 |
@@ -53,8 +53,13 @@ argument-hint: "<인자 예시>"
 | `AGENTS.md` | 담당 레포 표, 라우팅 기준 (도구 무관 공통 문서) |
 | `docs/team-lead.md` | 공통 리드의 에이전트·스킬 안내(Claude 의 `CLAUDE.md` 가 불러오고 Codex 도 같은 문서를 읽음) |
 | `README.md` | 팀 표, 사용 목록, 구조 |
+| 팩 `ROUTING.md` 1절 표 · "4. 검증 스크립트" | 레포 담당이면 그 레포 줄 · 검증 줄 — `bin/athena repo add` · `remove` 가 맞춘다(손으로 더한 에이전트는 같은 레포 줄의 에이전트 칸에) · 서버 담당은 "서버" 절 줄(`server add` · `remove`) |
+| 팩 `ROUTING.md` "2. 어느 레포인지 고르기" | 요청 말(서비스 · 화면 · 도메인) → 이 에이전트 · 겹치는 말은 "되묻는다" — 아테나가 쓴다 |
+| 팩 `pack.json` | 레포 항목 `agents` · `apps.<앱>.agent` · `packagesAgent` · 서버 `servers[].agents` — `bin/athena pack link` 가 프로필 링크를 건다 |
+| 팩 `knowledge/<레포>/` | `rules` · `structure` · `gotchas`(scaffold 뼈대) · `patterns` · `workflows`(`/setup` 초안 · 없으면 `/sync`) |
+| 팩 `verify/<레포>.sh` | 검증 스크립트(scaffold 가 `_generic.sh` 를 부르는 틀로) — 본체 `scripts/verify/<레포>.sh` 는 링크 |
 
-`/sync`는 레포 쪽 변화만 반영하고 athena 자체 구조 변화는 잡지 않는다. 스킬이나 에이전트를 추가했으면 아테나에게 **"방금 추가한 스킬 문서에도 반영해줘"**라고 하면 위 세 곳을 갱신한다.
+`/sync`는 레포 쪽 변화만 반영하고 athena 자체 구조 변화는 잡지 않는다. 스킬이나 에이전트를 추가했으면 아테나에게 **"방금 추가한 스킬 문서에도 반영해줘"**라고 하면 위 표의 코어 세 곳(`AGENTS.md` · `docs/team-lead.md` · `README.md`)과 팩 쪽 줄을 갱신한다.
 
 ## 화면 계층 (scripts/screen)
 아테나 스크립트·훅·지시문은 pane·탭·workspace 를 **`scripts/screen` 으로만** 다룬다. 화면 백엔드는 **studio**(Athena Studio 자체 터미널 데몬) 하나이고, 그 밖이면 **none**(터미널 하나뿐)이다. 데몬 CLI(`athena-studio-cli`)·`ATHENA_STUDIO_*`·접속 파일을 아는 곳은 `scripts/lib/screen.py` 하나다 — 스크립트는 아래 계약만 안다.

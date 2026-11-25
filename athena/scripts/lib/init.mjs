@@ -10,6 +10,7 @@ import { paths } from './config.mjs'
 import { isProtectedHomeDir } from './fs.mjs'
 import { DEFAULT_AGENT_LIGHT_MODEL } from './models.mjs'
 import { listRuleDocs, ruleDocList } from './rule-docs.mjs'
+import { repoRows, verifyLine } from './pack-routing.mjs'
 
 const git = (dir, args) => {
   try { return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
@@ -122,16 +123,9 @@ export const defaultAgents = (repo) => {
   return { agents: [repo.mobile ? `${repo.name}-app` : `${repo.name}-${role}`] }
 }
 
+// 레포 줄 모양은 pack-routing.mjs 한 곳 — 뒤에 더하고 빼는 레포(repo add · remove)도 같은 줄을 쓴다
 const routingDoc = (company, repos) => {
-  const rows = repos.flatMap((repo) => {
-    if (repo.kind === 'monorepo') {
-      return [
-        ...Object.entries(repo.apps).map(([app, spec]) => `| \`repos/${repo.name}/apps/${app}\` | \`${spec.agent}\` | 확인 필요 | \`origin/${spec.branch}\` |`),
-        `| \`repos/${repo.name}/packages/*\` | \`${repo.packagesAgent}\` | 공통 패키지 | \`origin/${repo.branch}\` |`,
-      ]
-    }
-    return [`| \`repos/${repo.name}\` | ${repo.agents.map((agent) => `\`${agent}\``).join(' · ')} | ${repo.layer === 'be' ? '**백엔드** ' : ''}확인 필요 | \`origin/${repo.branch}\` |`]
-  })
+  const rows = repos.flatMap(repoRows)
   return `# ${company} 팩 — 담당 레포·에이전트·라우팅
 
 > 팩의 라우팅 정본. 코어 문서는 회사 레포를 모르고 이 문서를 가리킨다(\`pack/ROUTING.md\`). 기계 정본은 \`pack.json\`.
@@ -152,7 +146,7 @@ ${rows.join('\n')}
 ## 4. 검증 스크립트
 
 \`\`\`bash
-${repos.map((repo) => `scripts/verify/${repo.name}.sh${repo.kind === 'monorepo' ? ' <앱>' : ''}`).join('\n')}
+${repos.map(verifyLine).join('\n')}
 \`\`\`
 
 ## 5. 회사 스킬

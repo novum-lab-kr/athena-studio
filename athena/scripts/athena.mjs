@@ -85,6 +85,7 @@ import { setRepoDisplayName, setRepoIcon } from './lib/pack-repo-look.mjs'
 import { setAutoMerge } from './lib/pack-merge.mjs'
 import { CONTRACT, deletePack, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
+import { addRepoRouting } from './lib/pack-routing.mjs'
 import { addServer, removeServer, sshHosts } from './lib/servers.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
@@ -199,8 +200,8 @@ const init = () => {
   link()
 }
 
-// 레포 하나 더하기 — pack.json · local.json(lib/init.mjs addRepo) → repos/ 링크 → 그 레포 뼈대(에이전트 · 지식 · 검증) → 팩 링크.
-// 뼈대 채우기(에이전트 설명 · 지식 · ROUTING · services · 지문)는 아테나가 docs/setup.md "레포 하나 더하기" 대로
+// 레포 하나 더하기 — pack.json · local.json(lib/init.mjs addRepo) → repos/ 링크 → 그 레포 뼈대(에이전트 · 지식 · 검증) · ROUTING 표 줄 · 검증 목록 줄(lib/pack-routing.mjs) → 팩 링크.
+// 뼈대 채우기(에이전트 설명 · 지식 · ROUTING 담당 범위 칸 · 어느 레포인지 고르기 · services · 지문)는 아테나가 docs/setup.md "레포 하나 더하기" 대로
 const runRepoAdd = () => {
   const dir = positional()[0]
   if (!dir) throw new PackError('usage', '사용: athena repo add <레포 폴더> [--name <이름>] [--json]')
@@ -209,13 +210,14 @@ const runRepoAdd = () => {
   const repos = syncRepos(ROOT)
   const made = added.already ? [] : scaffold({ athenaRoot: ROOT, packDir: packDir(), config: loadConfig(ROOT), only: [added.repo.name] })
   if (!asJson) for (const path of made) console.log(`   + ${relative(ROOT, path)}`)
+  if (!added.already && addRepoRouting(packDir(), added.repo) && !asJson) console.log('   ~ pack/ROUTING.md(표 · 검증 목록 줄)')
   const quiet = console.log
   if (asJson) console.log = () => {}
   try { link() } finally { console.log = quiet }
   return { ...added, linked: repos.linked.includes(added.repo.name), scaffolded: made.map((path) => relative(ROOT, path)) }
 }
 
-// 팩에서 레포 빼기 — lib/packs.mjs removeRepo 뒤 팩 링크 정리(빠진 에이전트 링크가 지워진다). ROUTING · services 줄 정리는 아테나가
+// 팩에서 레포 빼기 — lib/packs.mjs removeRepo(ROUTING 표 · 검증 목록 줄도) 뒤 팩 링크 정리(빠진 에이전트 링크가 지워진다). services · 어느 레포인지 고르기 줄 정리는 아테나가
 const runRepoRemove = () => {
   const name = positional()[0]
   if (!name) throw new PackError('usage', '사용: athena repo remove <레포 이름> [--json]')
