@@ -54,39 +54,23 @@ export const FINAL_RESULTS = ['멈춤', '머지됨']
 // 커밋 없이 PR 본문만 고쳤다(ship.sh --auto-push --body-file) — 같은 HEAD 지만 다시 리뷰하고 라운드를 하나 쓴다
 export const BODY_EDITED = '본문 고침'
 
-// ── 빠른 길(2026-10-31 계획서 "아테나 작업 속도 높이기" D1 · D2) ─────────────────────────
-// 작은 PR 은 상한 1라운드(리뷰어는 평소와 같은 하나 — reviewerSlot). 승인이면 같은 HEAD 검증 → 머지, 수정 필요면 지적을 보내고
+// ── 빠른 길(2026-10-31 계획서 "아테나 작업 속도 높이기" D1 · D2 · 2026-11-08 모든 PR · 2026-11-25 옵션 없앰) ───────
+// 리뷰를 켠 PR 은 모두 상한 1라운드(리뷰어는 평소와 같은 하나 — reviewerSlot). 승인이면 같은 HEAD 검증 → 머지, 수정 필요면 지적을 보내고
 // 고친 새 HEAD(라운드 2 — 줄에는 2/2 · 2차)는 상한 뒤 이어받음과 같은 길 — 같은 리뷰어의 짧은 리뷰 → 승인이면 검증 · 충돌 확인 → 머지 단계(auto.takeover).
-// 판정은 ship.sh 가 PR 올리기 직전에 한 번(fastPathVerdict) 하고 계획서 Checkpoint "- Fast path: yes|no (<이유>)" 줄로 남긴다 — pr-auto 는 그 줄만 읽는다(planFastPath).
-// 레포가 리뷰 끔(autoReview: false)이면 빠른 길과 상관없이 리뷰 없이(지금처럼)
+// 레포 "fastPath" 키 · 계획서 "- Fast path:" 줄은 더 읽지 않는다(옛 팩 · 계획서에 남아 있어도 무시). 리뷰 끔(autoReview: false)이면 리뷰 없이(지금처럼)
 export const FAST_PATH = '⚡ 빠른 길'
 export const FAST_MAX_ROUNDS = 1
 // 계획서 줄 · 댓글의 라운드 분모 — 빠른 길은 리뷰가 최대 2번(1차 + 2차 짧은 리뷰)이라 2로 적는다(상한 판정은 FAST_MAX_ROUNDS 그대로 · 줄의 분모는 판정에 쓰지 않는다)
 export const FAST_REVIEWS = FAST_MAX_ROUNDS + 1
 export const shownMax = (max, fast = false) => (fast ? FAST_REVIEWS : max)
-export const FAST_PATH_MAX_FILES = 10   // 작은 일 = 기준 브랜치 대비 바뀐 파일 수 상한 — 상수 하나 · 옵션화하지 않는다
-// 설정 파일 — 하나라도 바뀌면 빠른 길 아님. scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE("전체로 가는" 목록)와 같아야 한다(test/pr-auto-test.sh 가 원문 비교)
-export const FAST_PATH_CONFIG_RE = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.nvmrc|vite\.config\.[a-z]+|pyproject\.toml|pyrightconfig\.json|requirements[^/]*\.txt|\.github\/.+)$|(^|\/)scripts\/verify\//
-// 계획서 1절에 이 말이 있으면 빠른 길 아님(보안 · 외부 계약 · 데이터에 닿는 일은 상한 3) — 1절(## 1. …)부터 다음 ## 까지만 본다
-export const FAST_PATH_FLAGS = ['보안', '외부 계약', '데이터']
-export const planFastPathFlags = (planText) => {
+// 설정 파일 — 하나라도 바뀌면 넓은 수정(wideChangeVerdict). scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE("전체로 가는" 목록)와 같아야 한다(test/pr-auto-test.sh 가 원문 비교)
+export const CONFIG_FILE_RE = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.nvmrc|vite\.config\.[a-z]+|pyproject\.toml|pyrightconfig\.json|requirements[^/]*\.txt|\.github\/.+)$|(^|\/)scripts\/verify\//
+// 계획서 1절에 이 말이 있으면 넓은 수정(보안 · 외부 계약 · 데이터에 닿는 일) — 1절(## 1. …)부터 다음 ## 까지만 본다
+export const PLAN_RISK_FLAGS = ['보안', '외부 계약', '데이터']
+export const planRiskFlags = (planText) => {
   const section = String(planText ?? '').match(/^## 1\.[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? ''
-  return FAST_PATH_FLAGS.filter((word) => section.includes(word))
+  return PLAN_RISK_FLAGS.filter((word) => section.includes(word))
 }
-// 팩 레포 "fastPath": false — 이 레포는 늘 상한 3(없으면 true)
-export const repoFastPath = (config, repoName) => (config?.repos ?? []).find((repo) => repo.name === repoName)?.fastPath !== false
-// 판정 — { fast, why }. why 는 계획서 줄 괄호 안에 그대로 들어간다(짧게)
-export const fastPathVerdict = ({ repoFast = true, files = [], flagged = [] }) => {
-  if (!repoFast) return { fast: false, why: '레포 fastPath: false' }
-  const configFiles = files.filter((path) => FAST_PATH_CONFIG_RE.test(path))
-  if (configFiles.length) return { fast: false, why: `설정 파일 ${configFiles.slice(0, 3).join(' · ')}${configFiles.length > 3 ? ` 외 ${configFiles.length - 3}개` : ''}` }
-  if (files.length > FAST_PATH_MAX_FILES) return { fast: false, why: `파일 ${files.length}개 > ${FAST_PATH_MAX_FILES}` }
-  if (flagged.length) return { fast: false, why: `1절에 ${flagged.join(' · ')}` }
-  return { fast: true, why: `파일 ${files.length}개` }
-}
-//   - Fast path: yes|no (<이유>)
-//   읽기 · 쓰기 모두 "## Checkpoint" 절 안에서만 — 본문 예시 · 옛 기록에 같은 모양의 줄이 있어도 판정으로 읽지 않는다(PR #200 자동 리뷰 지적). Checkpoint 절이 없는 계획서는 빠른 길이 아니다
-const FAST_LINE = /^- Fast path:\s*(yes|no)\b(?:\s*\((.*)\))?\s*$/
 // "## Checkpoint" 절의 줄 범위 [start, end) — 절이 없으면 null
 const checkpointRange = (lines) => {
   const start = lines.findIndex((row) => /^##\s+Checkpoint\s*$/.test(row))
@@ -100,31 +84,6 @@ const checkpointIndex = (lines, matches) => {
   if (!range) return -1
   for (let index = range.start + 1; index < range.end; index += 1) if (matches(lines[index])) return index
   return -1
-}
-export const planFastPath = (planText) => {
-  const lines = String(planText ?? '').split('\n')
-  const index = checkpointIndex(lines, (row) => FAST_LINE.test(row))
-  return index >= 0 && lines[index].match(FAST_LINE)?.[1] === 'yes'
-}
-export const fastPathLineText = ({ fast, why = '' }) => `- Fast path: ${fast ? 'yes' : 'no'}${why ? ` (${oneLine(why, 200)})` : ''}`
-// Checkpoint 절에 같은 줄이 있으면 바꾸고(PR 을 다시 올리면 다시 판정) 없으면 그 절의 Work ref 뒤 · 그것도 없으면 그 절 끝에.
-// Checkpoint 절이 없으면 Work ref 뒤 · 끝에(그 줄은 planFastPath 가 읽지 않는다). ship.sh 의 with_fast_line 이 같은 규칙으로 쓴다
-export const withFastPathLine = (planText, entry) => {
-  const line = fastPathLineText(entry)
-  const lines = String(planText).split('\n')
-  const index = checkpointIndex(lines, (row) => FAST_LINE.test(row))
-  if (index >= 0) { lines[index] = line; return lines.join('\n') }
-  const range = checkpointRange(lines)
-  if (range) {
-    const anchor = checkpointIndex(lines, (row) => /^- Work ref:/.test(row))
-    let at = anchor >= 0 ? anchor + 1 : range.end
-    if (anchor < 0) while (at > range.start + 1 && lines[at - 1].trim() === '') at -= 1
-    lines.splice(at, 0, line)
-    return lines.join('\n')
-  }
-  const anchor = lines.findIndex((row) => /^- Work ref:/.test(row))
-  if (anchor >= 0) { lines.splice(anchor + 1, 0, line); return lines.join('\n') }
-  return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
 }
 
 // ── 리뷰어 구성 — 하나(2026-11-08 사용자 결정 · 계획서 "PR 자동 리뷰를 리뷰어 하나로") ──────────────
@@ -598,11 +557,10 @@ export const mergeModeOf = (repo) => {
 }
 // PR 끔 = "autoMerge": true 에 "autoPr": false 를 더한 것 — PR 도 리뷰도 없이 작업 브랜치를 prBase 에 바로 squash 머지한다(direct: true).
 // "autoMerge" 키가 없으면 autoPr 와 상관없이 자동 흐름 없음(키 없는 pack.json 이 업데이트로 갑자기 머지하지 않게)
-//   "fastPath": false          빠른 길 끔 — 작은 PR 도 늘 상한 3(없으면 켬 · PR 켬 + 리뷰 켬일 때만 뜻이 있다)
 export const prFlow = (repo) => {
-  if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual', direct: false, fast: false }
-  if (repo.autoPr === false) return { pr: false, review: false, merge: mergeModeOf(repo), direct: true, fast: false }
-  return { pr: true, review: repo.autoReview !== false, merge: mergeModeOf(repo), direct: false, fast: repo.fastPath !== false }
+  if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual', direct: false }
+  if (repo.autoPr === false) return { pr: false, review: false, merge: mergeModeOf(repo), direct: true }
+  return { pr: true, review: repo.autoReview !== false, merge: mergeModeOf(repo), direct: false }
 }
 export const repoFlow = (config, repoName) => prFlow((config?.repos ?? []).find((repo) => repo.name === repoName))
 // PR 끔 + 바로 머지 레포 — 대상은 prBase 로 바로 머지(directMerge · pr-auto.mjs --direct-merge)
@@ -1080,7 +1038,7 @@ export const prBaseOf = (config, repoName) => {
 // 스크립트 기준(값의 근거 — origin/main 바로 머지 squash 커밋 33개 · 2026-10-26~11-04 · 계획서 Decisions):
 //   코드 파일(문서 · 그림 제외)이 5개 이상 — 지난 기록이 4개 이하(버그 수정 · 작은 기능 12건)와 6개 이상(새 기능 · 구조 변경 17건)으로 갈라지고 5개는 없었다
 //   코드 줄(+ 와 - 합)이 150 이상 — 4개 이하 묶음 안에서 버그 수정은 95줄 이하, 새 기능은 151~361줄
-//   민감 경로 — 설정 파일(FAST_PATH_CONFIG_RE) · 훅 · 인증 · 비밀 · 권한 · 마이그레이션 · 스키마 · .env 는 크기와 상관없이 넓은 수정
+//   민감 경로 — 설정 파일(CONFIG_FILE_RE) · 훅 · 인증 · 비밀 · 권한 · 마이그레이션 · 스키마 · .env 는 크기와 상관없이 넓은 수정
 // 에이전트 표시 — 계획서 Checkpoint 의 "- Wide change: yes (<이유>)" 줄(에이전트가 새 기능 · 구조 변경 · 외부 계약처럼 줄 수로 안 보이는 것을 적는다)
 export const WIDE_MIN_CODE_FILES = 5
 export const WIDE_MIN_CODE_LINES = 150
@@ -1093,10 +1051,10 @@ export const isCodeFile = (filePath) => {
   if (/(^|\/)(CHANGELOG|LICENSE|NOTICE)[^/]*$/i.test(path)) return false
   return !/\.(md|markdown|mdx|txt|png|jpe?g|gif|svg|ico|webp|pdf|csv)$/i.test(path)
 }
-// 판정 — { wide, why }. files = [{ path, added, deleted }](git diff --numstat origin/<base>...HEAD) · flagged = 계획서 1절 표시(planFastPathFlags) · marked = 에이전트 표시 이유('' 이면 없음)
+// 판정 — { wide, why }. files = [{ path, added, deleted }](git diff --numstat origin/<base>...HEAD) · flagged = 계획서 1절 표시(planRiskFlags) · marked = 에이전트 표시 이유('' 이면 없음)
 // why 는 계획서 "- Auto merge:" 줄 괄호 안과 reviewer 지시에 그대로 들어간다(짧게)
 export const wideChangeVerdict = ({ files = [], flagged = [], marked = '' }) => {
-  const sensitive = files.map((file) => file.path).filter((path) => FAST_PATH_CONFIG_RE.test(path) || WIDE_SENSITIVE_RE.test(path))
+  const sensitive = files.map((file) => file.path).filter((path) => CONFIG_FILE_RE.test(path) || WIDE_SENSITIVE_RE.test(path))
   if (sensitive.length) return { wide: true, why: `민감 경로 ${sensitive.slice(0, 3).join(' · ')}${sensitive.length > 3 ? ` 외 ${sensitive.length - 3}개` : ''}` }
   const code = files.filter((file) => isCodeFile(file.path))
   const lines = code.reduce((sum, file) => sum + (Number(file.added) || 0) + (Number(file.deleted) || 0), 0)
@@ -1107,7 +1065,7 @@ export const wideChangeVerdict = ({ files = [], flagged = [], marked = '' }) => 
   if (!code.length) return { wide: false, why: files.length ? `문서만 ${files.length}개` : '바뀐 파일 없음' }
   return { wide: false, why: `코드 파일 ${code.length}개 · ${lines}줄` }
 }
-// 에이전트 표시 줄 — "- Wide change: yes (<이유>)" · Checkpoint 절 안에서만 읽는다(빠른 길 줄과 같은 까닭). 이유 문자열(없으면 '')
+// 에이전트 표시 줄 — "- Wide change: yes (<이유>)" · Checkpoint 절 안에서만 읽는다(본문 예시 · 옛 기록의 같은 모양 줄을 읽지 않게). 이유 문자열(없으면 '')
 const WIDE_LINE = /^- Wide change:\s*(yes|no)\b(?:\s*\((.*)\))?\s*$/
 export const planWideMark = (planText) => {
   const lines = String(planText ?? '').split('\n')

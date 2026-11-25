@@ -111,7 +111,6 @@
   "status.done": "✅ 완료",
   "status.open": "📌 할 일",
   "status.wontfix": "🚫 안 함",
-  "chip.fastPath": "⚡ fast path",
   "chip.archived": "🗄 보관 {at}",
   "history.openConsole": "결정 콘솔 열기 ↗",
   "history.bundle": "📎 이슈+계획서",
