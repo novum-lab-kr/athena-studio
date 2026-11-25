@@ -254,11 +254,16 @@ check "init --scan(기준 폴더 = 홈) — 보호 폴더 안 레포는 안 찾�
 SCAN_UP="$(scan_names "$WORK" 3)"
 check "init --scan(기준 폴더 = 홈 위) — 보호 폴더 안 레포는 안 찾음" '! echo "$SCAN_UP" | grep -Eq "(^|,)(m|v|p|l)-repo(,|$)" && echo "$SCAN_UP" | grep -q app-repo' "$SCAN_UP"
 rm -rf "$FAKE_HOME"
+# ROUTING — init 이 만드는 모양(1절 표 · 4절 검증 목록)으로 바꿔 둔다(fixture 는 표 하나뿐 · 절 끝에 되돌린다)
+cp pack/ROUTING.md "$WORK/routing.add.bak"
+printf '%s\n' '# acme 팩' '' '## 1. 담당 레포와 기준 브랜치' '' '| 레포 | 에이전트 | 담당 범위 | 기준 브랜치 |' '|---|---|---|---|' '| `repos/acme-web` | `acme-web-fe` | 웹 | `origin/main` |' '' '## 4. 검증 스크립트' '' '```bash' 'scripts/verify/acme-web.sh' '```' '' '## 5. 회사 스킬' > pack/ROUTING.md
 mkdir -p "$SRCS/team/new-svc" && git -C "$SRCS/team/new-svc" init -q -b main && (cd "$SRCS/team/new-svc" && echo x > README.md && git add . && git -c user.email=t@e.invalid -c user.name=t commit -qm init && git remote add origin https://u:tok@example.com/acme/new-svc.git)
 R="$(A repo add "$SRCS/team/new-svc")"
 check "repo add → pack.json 항목(git 주소 · 토큰 뗌) · 자리 · repos/ 링크" '[ "$(echo "$R" | field repo.name)" = new-svc ] && grep -q "\"new-svc\"" pack/pack.json && grep -q "https://example.com/acme/new-svc.git" pack/pack.json && ! grep -q "tok@" pack/pack.json && grep -q "team/new-svc" "$LOCAL" && [ "$(readlink repos/new-svc)" = "$SRCS/team/new-svc" ] && [ "$(echo "$R" | field linked)" = True ]' "$R"
 check "repo add → 그 레포 뼈대(에이전트 · 지식 · 검증) · 에이전트 링크" '[ -f pack/agents/new-svc-fe.md ] && [ -f pack/knowledge/new-svc/rules.md ] && [ -x pack/verify/new-svc.sh ] && [ -L .claude/agents/new-svc-fe.md ]' "$R"
+check "repo add → ROUTING 1절 표 · 검증 목록에 그 레포 줄(첫 실행 뒤 더한 레포도)" 'sed -n "/^## 1\\./,/^## /p" pack/ROUTING.md | grep -q "^| \`repos/new-svc\` | \`new-svc-fe\` |" && sed -n "/검증 스크립트/,/^## /p" pack/ROUTING.md | grep -qx "scripts/verify/new-svc.sh"' "$(cat pack/ROUTING.md)"
 check "같은 레포 다시 → already" '[ "$(A repo add "$SRCS/team/new-svc" | field already)" = True ]'
+check "같은 레포 다시 → ROUTING 줄 겹치지 않음" '[ "$(grep -c "^| \`repos/new-svc\` |" pack/ROUTING.md)" = 1 ] && [ "$(grep -cx "scripts/verify/new-svc.sh" pack/ROUTING.md)" = 1 ]'
 mkdir -p "$SRCS/other/new-svc" && git -C "$SRCS/other/new-svc" init -q -b main
 check "같은 이름 · 다른 자리 → exists" '[ "$(A repo add "$SRCS/other/new-svc" | field error)" = exists ]'
 check "git 레포가 아니면 → not-repo" '[ "$(A repo add "$WORK" | field error)" = not-repo ]'
@@ -268,6 +273,7 @@ rm -rf "$ATHENA_DATA_DIR/packs/acme/worktrees/new-svc"
 printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > "$WORK/repo-icon.png"; A pack set-repo-icon new-svc "$WORK/repo-icon.png" >/dev/null
 R="$(A repo remove new-svc)"
 check "repo remove → 그 레포 아이콘(assets/repos/new-svc.*)도 지움" '[ ! -e pack/assets/repos/new-svc.png ]' "$R"
+check "repo remove → ROUTING 표 · 검증 목록의 그 레포 줄 지움 · 다른 레포 줄은 그대로" '! grep -q "repos/new-svc\`" pack/ROUTING.md && ! grep -qx "scripts/verify/new-svc.sh" pack/ROUTING.md && grep -q "^scripts/verify/" pack/ROUTING.md' "$(cat pack/ROUTING.md)"
 check "repo remove → 팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증 지움 · 레포 폴더는 그대로" '[ -f "$(echo "$R" | field backup)" ] && ! grep -q "\"new-svc\"" pack/pack.json && ! grep -q "new-svc" "$LOCAL" && [ ! -e repos/new-svc ] && [ ! -L repos/new-svc ] && [ ! -e pack/agents/new-svc-fe.md ] && [ ! -e pack/knowledge/new-svc ] && [ ! -e pack/verify/new-svc.sh ] && [ ! -L .claude/agents/new-svc-fe.md ] && [ -d "$SRCS/team/new-svc/.git" ]' "$R"
 # 아이콘 자리가 링크면(git 으로 받은 팩) 아이콘만 건너뛰고 경고 · 빼기는 이어 간다 · 밖 파일은 그대로
 mkdir -p "$SRCS/team/new-svc2" && git -C "$SRCS/team/new-svc2" init -q -b main && A repo add "$SRCS/team/new-svc2" >/dev/null
@@ -277,7 +283,7 @@ check "repo remove — assets/repos 가 링크면 아이콘만 건너뜀(warning
 rm -rf pack/assets
 check "없는 레포 → not-found" '[ "$(A repo remove nope | field error)" = not-found ]'
 check "다른 레포는 그대로(acme-web · acme-api 링크)" '[ -L repos/acme-web ] && [ -L repos/acme-api ] && [ -L .claude/agents/acme-web-fe.md ]'
-cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; A pack open acme >/dev/null
+cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; cp "$WORK/routing.add.bak" pack/ROUTING.md; A pack open acme >/dev/null
 
 section "서버 하나 더하기 · 빼기(server hosts · add · remove — 가짜 ssh)"
 cp pack/pack.json "$WORK/pack.srv.bak"; cp pack/ROUTING.md "$WORK/routing.srv.bak"

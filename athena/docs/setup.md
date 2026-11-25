@@ -51,7 +51,7 @@
 작업자 지시(레포마다 같은 틀):
 - 대상: `repos/<레포>`(모노레포 앱은 `apps/<앱>`)를 **운영 기준 ref**(`git show origin/<branch>:<경로>` · `git ls-tree`)로 읽는다. 메인 체크아웃은 브랜치가 제각각이라 읽지 않는다. 쓰지 않는다
 - 채울 것: 에이전트 `description`(어떤 요청이면 이 에이전트인지 — 화면·도메인 키워드 한 문장, **콜론+공백 금지**) · `rules.md` "필수"(금지·용어·생성물) · `rules.md` "언어 · 타입 상태"(`tsconfig` · `jsconfig` · pyright 설정 · 파일 확장자 · 모듈 방식을 읽고 `JS + JSDoc · checkJs` / `섞어 쓰는 중` / `TS` 중 하나 — 기준 `docs/knowledge/common/coding.md` "언어 · 타입") · `structure.md`(스택·디렉토리·라우트·스크립트). 레포 원문은 요약해 옮기지 않는다 — 세션에 자동으로 실린다(`docs/pack.md` "ruleDocs"). **확인 안 된 것은 "확인 필요"로 남긴다** — 추측을 사실로 쓰지 않는다
-- `patterns.md`·`workflows.md` 는 만들지 않는다(그 레포를 처음 작업할 때 채운다)
+- `patterns.md`("이런 걸 만들 땐 이 파일을 따라라" — 화면 · API · 폼 · 상태 · 테스트처럼 **레포에 실제로 있는 종류만**, 줄마다 기준 ref 의 실제 파일 경로) · `workflows.md`(반복 작업 체크리스트 — 새 화면 · 새 API 추가 등, 단계마다 실제 파일 · 레포 스크립트로 확인한 것만) **초안**. 실제 경로가 없는 본보기는 쓰지 않는다 · 본보기가 하나뿐이거나 기존 구현끼리 모양이 달라 고르기 어려우면 그 줄에 "확인 필요" · 쓸 것이 하나도 없으면 파일을 만들지 않는다(에이전트는 없으면 코드에서 같은 종류를 찾아 따른다). 이미 있는 파일은 덮지 않는다
 - 레포 고유 검증이 필요하면(`_generic.sh` 로 부족) `verify/<레포>.sh` 를 `_lib.sh` 로 다시 쓴다
 - 보고: 채운 파일 · "확인 필요" 목록 · **서비스 소개**(서비스(앱)마다 "무엇을 하나" 한 줄 · 주요 화면·API 3~5개와 근거 파일) — services.md 는 작업자가 쓰지 않는다(여럿이 한 파일을 덮지 않게)
 그다음 아테나가
@@ -83,9 +83,9 @@ Jev(TypeSafe 의 판정 모델)는 학습 후보 중복 자동 버리기 · 배�
 
 ## 레포 하나 더하기 — 이미 팩이 있을 때
 Athena Studio 의 spaces `+` 로 git 레포 폴더를 고르면 앱이 1단계를 하고 아테나에게 "레포 <이름> 을 팩에 더했어 — 뼈대를 채워 줘" 를 보낸다. 말로 "<폴더> 레포 추가해줘" 라고 해도 같다.
-1. (앱이 안 했으면) `bin/athena repo add <레포 폴더> [--name <이름>]` — 훑어 `pack.json` 에 항목(브랜치 · 기준 · 종류 · 층 · git 주소 · 기본 에이전트) · `<팩 데이터>/local.json` 에 자리 · `repos/` 링크 · 그 레포 뼈대(4단계와 같은 파일) · 팩 링크. 같은 이름이 다른 자리에 있으면 `exists` — 사용자에게 다른 이름을 묻고 `--name`
+1. (앱이 안 했으면) `bin/athena repo add <레포 폴더> [--name <이름>]` — 훑어 `pack.json` 에 항목(브랜치 · 기준 · 종류 · 층 · git 주소 · 기본 에이전트) · `<팩 데이터>/local.json` 에 자리 · `repos/` 링크 · 그 레포 뼈대(4단계와 같은 파일) · `ROUTING.md` 1절 표 줄(담당 범위 "확인 필요") · "검증 스크립트" 목록 줄 · 팩 링크(빼기 `bin/athena repo remove <이름>` 은 이 두 줄도 지운다 · 그 절이 없는 손으로 고친 ROUTING 은 건너뛴다). 같은 이름이 다른 자리에 있으면 `exists` — 사용자에게 다른 이름을 묻고 `--name`
 2. 추정이 맞는지 사용자에게 한 줄로 확인한다(2단계와 같은 표 — 그 레포 한 줄) · 고쳤으면 `pack.json` 그 항목 · 같은 자리에서 **PR 자동 리뷰 · 머지를 켤지** 묻는다(2단계와 같은 안내 · 기본 끔 — 켜면 그 항목에 `"autoMerge": true`)
-3. 그 레포만 5단계(작업자 하나 — 뼈대 채우기) · `ROUTING.md` 표 한 줄과 "어느 레포인지 고르기" · `docs/services.md` 그 서비스 한 줄
+3. 그 레포만 5단계(작업자 하나 — 뼈대 채우기) · `ROUTING.md` 그 레포 줄의 담당 범위 칸(1단계가 넣은 "확인 필요")과 "어느 레포인지 고르기" · `docs/services.md` 그 서비스 한 줄
 4. 그 레포만 6단계(`scripts/verify/<레포>.sh`) · 7단계(`node scripts/sync-fingerprint.mjs --repo <레포>` → `--accept` → `node scripts/build-derived.mjs`) · 흐름 문서는 묻는다(5-1)
 5. 보고 — 8단계 형식에서 그 레포 것만
 
@@ -103,8 +103,10 @@ Athena Studio 의 서버 등록 팝업(우측 상단 서버 버튼 — 서버가
    / 로그 자리 · 크론 · 타이머 / 팩 레포 연결(배포 경로의 git remote · package.json name 을 pack.json repos 와 맞춰 본다).
    .env* · 키 · 인증서 파일은 내용을 읽지 않는다(있는지 · 크기만). 주소 · 계정 · 비밀값은 문서에 적지 않는다.
    모르는 칸은 "확인 필요". 팩 레포와 이어진 것은 pack.json servers[] 그 항목의 repos · paths 에 적는다.
+   끝나면 pack/agents/<이름>-ops.md 맨 위 description 의 "분석 전 —" 문장을 무엇이 도는 서버인지로 바꾼다
+   (서비스 이름 · 도메인 · 연결된 팩 레포 — 아테나가 요청을 이 서버로 고르는 말. 콜론+공백은 쓰지 않는다). 모르면 그 문장은 그대로 둔다.
    ```
-4. 다이어그램 — `/diagram` 으로 서버 그림 하나(`docs/diagrams/AUTHORING.md` "서버 그림") · `ROUTING.md` 그 서버 줄의 "무엇이 도나" 칸 채우기
+4. 다이어그램 — `/diagram` 으로 서버 그림 하나(`docs/diagrams/AUTHORING.md` "서버 그림") · `ROUTING.md` 그 서버 줄의 "무엇이 도나" 칸("분석 전 —") 채우기 — 3단계가 에이전트 description 에 적은 말과 같게
 5. 보고 — 등록한 서버 · 분석 요약(서비스 · 포트 · 연결된 팩 레포) · "확인 필요" 칸 · 다이어그램 주소
 
 서버 작업도 계획서 하나에 묶는다(경량 `plans/task/`) — 서버를 바꾼 작업은 Progress 에 **바꾼 파일 · 백업 위치 · 실행한 명령** 을 한 줄씩 남긴다. 팩 레포에서 배포된 코드는 서버에서 고치지 않고 그 레포에서 고쳐 배포 흐름으로 올린다 — 서버에서 직접 고치는 것은 서버 설정뿐(계획서 결정 D3). 서버 보호는 **위험한 것만 묻는다**(2026-11-11 결정) — 서버에는 `scripts/ssh-run.sh` 로만 들어가고(바로 가는 ssh · scp · rsync 는 훅 `scripts/hooks/server-guard.py` 가 막는다), 판정(`scripts/lib/server_allow.py` — 정본)대로 읽기 · 파일 쓰기 · mkdir · `systemctl daemon-reload` · 명령 잇기는 바로 돈다. 위험 명령(서비스 재시작 · 멈춤 · 켜기/끄기 · 삭제 · 설치/제거 · 권한 · 사용자 · 재부팅 · 디스크 · 방화벽 · crontab 고치기 · 재귀 복사 `cp -r`/`-a` · `git stash` 의 `list` · `show` 밖) · 판정 못 한 명령 · 비밀 파일 · 보호 경로(sudoers · cron · fstab · `/etc/ssh` · `.ssh` · `/dev` …) · 다음에 실행되는 자리(`/etc/profile.d` · `rc.local` · `/etc/systemd` · `ld.so.conf` · `/usr/local/bin` · 셸 rc … — 빈 폴더 `mkdir` 은 바로) 쓰기 · 클라우드 메타데이터 주소(`169.254.*` · `metadata.*`) curl · 셸 펼침 글자와 보호 경로 `--put`(diff · 원격 백업 위치를 보여 준다)은 [작업] 확인 요청을 열고(보통 경로 `--put` 은 묻지 않고 백업 뒤 덮어쓴다), 답이 `실행` 이면 `ATHENA_SERVER_APPROVED=<요청 id>` 를 붙여 다시 낸다(60분 안 · 한 번만 — 쓴 승인은 `<팩 데이터>/state/server-approvals-used` 에 적혀 다시 쓰지 못한다). 서버 확인 요청(명령 key `server-cmd:*` · 파일 올리기 `--put` key `server-put:*`)에는 위임 에이전트 세션(reviewer 포함)이 `request answer` · `request cancel` 을 부르지 못한다(훅이 요청을 읽어 본다 — 자기 확인 요청에 스스로 답하는 길 · 계획서 결정 R1). 아테나(리드 — `ATHENA_AGENT` 없는 본체 세션)는 `request answer <id> --by lead --choice 실행` 으로 승인하고 `request cancel` 로 닫는다 — 사용자가 [작업] 탭을 일일이 누르지 않게(2026-11-21 사용자 결정 "아테나만 승인 가능하게" · 답한 사람은 `lead` 로 남는다). 다른 질문 · 결정 요청의 대화 답 · 취소는 그대로 된다 · 요청 id 를 변수로 넘기거나 요청을 못 읽으면 막는다. 비밀 파일 이름 검사(`cat` · `--get` · `--put` 이 같은 `server_allow.py secret`)는 **흔한 이름만** 막는다(.env · 키 · 인증서 · `ssh_host_*_key` · `.docker/config.json` · `.kube/config` …) — 모든 비밀 파일을 알지는 못한다. 등록 시험(`true`) · 앱 서버 상태 칸 갱신도 바로 되는 읽기 명령만 쓴다 — 상태 칸은 `scripts/ssh-run.sh <이름> --status`(고정 읽기 명령 · 부하 · 메모리 · 디스크 · systemd · docker · 요청을 열지 않고, 확인이 필요한 판정이 되면 실패로 끝난다)를 몇 분마다 부른다.

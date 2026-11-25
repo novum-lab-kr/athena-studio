@@ -115,7 +115,7 @@ const FAIL_TEXT = {
 // (서버 이름이 레포 이름과 같아도 레포 표의 줄은 건드리지 않는다)
 const ROUTING_HEAD = '## 서버'
 /** @param {string} name @param {string} host @param {string} agent */
-const routingRow = (name, host, agent) => `| \`${name}\` | \`${host}\` | \`${agent}\` | 확인 필요 — 등록 뒤 분석이 채운다 |`
+const routingRow = (name, host, agent) => `| \`${name}\` | \`${host}\` | \`${agent}\` | 분석 전 — 등록 뒤 분석(docs/setup.md "서버 하나 더하기" 3~4단계)이 채운다 |`
 // 서버 절의 [머리, 끝) — 끝은 다음 "## " 줄(없으면 문서 끝). 절이 없으면 null
 /** @param {string[]} lines @returns {[number, number] | null} */
 const serverSection = (lines) => {

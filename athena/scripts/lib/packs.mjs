@@ -23,6 +23,7 @@ import { isLink, linkOverlay, removeLink, unlinkOverlay } from './overlay.mjs'
 import { captureRestore, checkRestore, discardRestore, restoreWork } from './restore.mjs'
 import { inspectLook, packLook } from './pack-look.mjs'
 import { dropRepoIcons } from './pack-repo-look.mjs'
+import { removeRepoRouting } from './pack-routing.mjs'
 
 export { PackError, alive }
 
@@ -601,7 +602,7 @@ export const syncRepos = (root) => {
   return { linked, unlinked, removed }
 }
 
-// 팩에서 레포 하나 빼기(bin/athena repo remove) — 팩 자동 백업 → pack.json 항목 · local.json 자리 · repos/ 링크 · 그 레포 에이전트 · 지식 · 검증 스크립트.
+// 팩에서 레포 하나 빼기(bin/athena repo remove) — 팩 자동 백업 → pack.json 항목 · local.json 자리 · repos/ 링크 · 그 레포 에이전트 · 지식 · 검증 스크립트 · ROUTING 표 줄 · 검증 목록 줄.
 // 레포 폴더는 그대로. 그 레포 워크트리가 남아 있으면(미커밋 작업일 수 있다) 빼지 않는다. 팩 링크 정리는 부르는 쪽(link)이
 export const removeRepo = (root, name, { report = () => {} } = {}) => {
   const where = paths(root)
@@ -633,6 +634,7 @@ export const removeRepo = (root, name, { report = () => {} } = {}) => {
     report('warn', warnings[warnings.length - 1])
   }
   writeJsonAtomic(join(packDir, 'pack.json'), { ...pack, repos: pack.repos.filter((repo) => repo !== entry) })
+  if (removeRepoRouting(packDir, name)) report('routing', 'ROUTING.md 표 · 검증 목록에서 그 레포 줄을 뺐다')
   const localFile = join(where.packDataReal, 'local.json')
   const local = readJson(localFile)
   if (local?.repoPaths?.[name] !== undefined) {

@@ -22,7 +22,7 @@ tools: {{tools}}
 
 ## 그다음은 작업 유형에 따라 (기준: `AGENTS.md` 2.3)
 지식은 `docs/knowledge/{{knowledge}}/` — `rules.md` · `structure.md` · `patterns.md` · `workflows.md` · `gotchas.md`.
-(patterns·workflows 는 이 레포를 처음 작업할 때 채운다 — 비어 있으면 실제 코드에서 같은 종류의 기존 구현을 찾아 따른다)
+(patterns·workflows 는 있으면 읽는다 — 없거나 그 종류가 없으면 실제 코드에서 같은 종류의 기존 구현을 찾아 따른다. 초안은 `/setup` · `/sync` 가 만든다)
 
 ## 코드 기준 (정본 `docs/knowledge/common/coding.md` "언어 · 타입" · "최신 문법" · "층별 기준")
 {{layerRules}}
