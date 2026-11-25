@@ -583,6 +583,15 @@ systemctl show x -p Environment,ExecStart
 systemctl show x -p EnvironmentFiles,Environment
 systemctl show x -p SetCredential
 systemctl show x -p LoadCredentialEncrypted
+systemctl show x -p '*Environment'
+systemctl show x -p 'Environ*'
+systemctl show x -p 'ExecStart,[E]nvironment'
+cat .e"$1"nv
+cat .e"$OLDPWD"nv
+cat .e"$?"nv
+cat id_"$1"rsa
+cat "$HOME"/.e"$1"nv
+wc -l < .e"$1"nv
 echo {a,b}
 echo a{1..3}
 grep -n ^[a-z] /etc/caddy/Caddyfile

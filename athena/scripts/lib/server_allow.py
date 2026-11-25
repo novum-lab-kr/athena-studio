@@ -319,6 +319,12 @@ def check_exact(name, args):
     return f'{name} {" ".join(args)}'.strip() + '(읽기 꼴이 아니다)'
 
 
+def var_secret(arg):
+    """변수(VAR) 자리를 / 로도 · 빈 글자로도 넣어 비밀 이름을 본다 — "$HOME"/.env 는 / 로, .e"$1"nv · id_"$1"rsa 는
+    값이 비면 .env · id_rsa 가 된다($1 · $? · OLDPWD 는 빌 수 있다 — 2026-11-25 보안 검토)"""
+    return secret_piece(arg.replace(VAR, '/')) or secret_piece(arg.replace(VAR, ''))
+
+
 def secret_piece(arg):
     """낱말 · 그 안의 공백 조각(sed 스크립트 '1r /x/.env' 같은 것)에서 비밀값 이름 — 없으면 None"""
     for piece in [arg] + (arg.split() if len(arg.split()) > 1 else []):
@@ -553,6 +559,9 @@ def check_sub(name, plain, values, args):
             return 'systemctl show 는 -p 로 칸을 골라야(옵션 없는 show 는 Environment 가 보인다)'
         # Environment= 는 값(비밀값)까지 · SetCredential= 은 자격 증명 값 — EnvironmentFiles= 는 파일 경로만이라 된다(2026-11-25)
         fields = [field.strip().lower() for value in properties for field in value.split(',')]
+        # systemctl 은 칸 이름의 glob 을 펼친다('*Environment' → Environment= 값 — 2026-11-25 PR 리뷰)
+        if any(char in field for field in fields for char in '*?['):
+            return 'systemctl show -p 의 glob(칸 이름을 펼쳐 Environment 까지 보일 수 있다)'
         if any(field.startswith(('environment', 'setcredential', 'loadcredential')) and field != 'environmentfiles' for field in fields):
             return 'systemctl show -p Environment(환경 변수 — 비밀값)'
         if '--all' in args or any(arg.startswith('-') and not arg.startswith('--') and 'a' in short_letters(arg, 'tnopP')[0] for arg in args):
@@ -901,8 +910,8 @@ def check_one(words, cwds=None, under_sudo=False):
         return f'경로로 부른 명령({name})'
     patterns = grep_patterns(name, args)
     for position, arg in enumerate(args):
-        # 변수 자리는 무엇이든 될 수 있다 — / 로 보고 이름을 본다("$HOME/.env" · "$USER".env)
-        bad = None if position in patterns else secret_piece(arg.replace(VAR, '/'))
+        # 변수 자리는 무엇이든 될 수 있다 — / 로도 빈 글자로도 넣어 이름을 본다("$HOME/.env" · .e"$1"nv)
+        bad = None if position in patterns else var_secret(arg)
         if bad:
             return f'비밀값이 들 수 있는 파일({bad})'
     hazard = danger(name, args)
@@ -1248,7 +1257,7 @@ def check(command):
             continue
         if token == '<':
             target = tokens[index + 1] if index + 1 < len(tokens) else ''
-            if not target or secret_arg(target.replace(VAR, '/')):
+            if not target or secret_arg(target.replace(VAR, '/')) or secret_arg(target.replace(VAR, '')):
                 return f'읽기 리다이렉트 {target.replace(VAR, "$…")}'.strip()
             index += 2
             continue
