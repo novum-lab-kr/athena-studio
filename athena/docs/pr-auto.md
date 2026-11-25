@@ -3,7 +3,7 @@
 에이전트가 draft PR 을 올린 뒤의 일 — 리뷰 · 고치기 · 머지 — 를 사람 대신 돌린다. 사람은 **머지 직전에 한 번** 누른다. PR · 리뷰 · 머지는 레포마다 따로 고른다(아래 "켜기").
 
 - 코드: `scripts/pr-auto.mjs`(대기열 · 처리기 · 리뷰 · 지시 · 머지) · `scripts/lib/pr-auto.mjs`(판정 · 계획서 표시 줄 · 대상 고르기 · 리뷰어 구성 · 앞 리뷰 이어받기 — 순수 로직) · 대기열 넣기는 `scripts/ship.sh`(push 하자마자) · 놓친 것은 현황판(`scripts/board/server.mjs` `autoReviewPlans` — 5분 안전망) · 고친 커밋 올리기는 `scripts/ship.sh --auto-push`
-- 시험: `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
+- 시험: `test/pr-auto-*-test.sh`(주제별 여덟 개 · 공통 준비 `test/_pr-auto-lib.sh` · 가짜 리뷰어 · GitHub 를 건드리지 않는다 — 나눈 기준은 레포 `AGENTS.md` "검사")
 - 코어 갱신 때 처리기 재시작: `update` · 되돌리기 · 따라잡기가 본체를 옮길 때 `pr-auto.mjs --watch` 를 끄고, 끝나면 그때 본체 코드로 `--kick` 해 일이 남았으면 다시 띄운다(옛 코드로 계속 돌지 않게 · 리뷰하다 끊긴 일은 대기열로 돌아간다). 처리기는 `pack busy` 에 세지 않아 옮기기를 막지 않는다
 - 기록: 현황판이 띄운 명령과 처리기의 stdout/stderr·종료 코드는 팩 데이터 `state/pr-auto-output.jsonl`(1MiB 상한 · 비밀값 마스킹 · 16KiB를 넘는 줄과 비밀키 본문 생략, 옛 단일 본체는 본체 루트)에 남긴다. 현황판 밖에서 시작한 처리기 로그는 `/tmp/athena-pr-auto-<키>.log` · 대기열 팩 데이터 `state/pr-auto-queue/`(머지 확인 대기 `confirm/` · 실패 `failed/` · PR 마다 지난 리뷰 `history/<레포>-<번호>.json`) · 사건 기록 `state/events.jsonl`(`docs/events.md`)
 
@@ -50,7 +50,7 @@ PR 끔 레포에서 넓은 수정이 리뷰 없이 머지되던 것을 막는다
   - 승인 뒤 커밋이 더해졌으면 같은 HEAD 가 아니다 — 승인 sha 뒤의 차이만 짧게 다시 리뷰(횟수는 새로 센다)
   - 같은 HEAD 에 수정 필요가 그대로면(고치지 않고 다시 옴) 다시 띄우지 않고 멈춘다(줄에 리뷰 횟수를 그대로 남겨 고친 뒤 회차가 이어진다) · reviewer 를 못 띄우거나(화면 밖 등) 20분 안에 결론이 없으면 멈추고 아테나에 알린다
   - 리뷰 멈춤은 [작업] 요청을 열지 않는다(고를 것이 없다 — 다음 할 일은 줄과 pane 에 있다)
-- 시험: `test/pr-auto-test.sh` "넓은 수정이면 리뷰 문"(가짜 reviewer · 가짜 원격 · Actions 넘기기 길 포함) · `test/handoff-test.sh`(workflow 파일은 민감 경로라 승인 뒤 넘기는 것)
+- 시험: `test/pr-auto-direct-test.sh` "넓은 수정이면 리뷰 문"(가짜 reviewer · 가짜 원격 · Actions 넘기기 길 포함) · `test/handoff-test.sh`(workflow 파일은 민감 경로라 승인 뒤 넘기는 것)
 
 ### 보안 검토 문 (2026-11-08 사용자 결정)
 
@@ -63,7 +63,7 @@ PR 끔 레포에서 넓은 수정이 리뷰 없이 머지되던 것을 막는다
   - `pr-auto.mjs` 자동 머지 · `--direct-merge` · `--handoff` — 줄 `보안 검토 때문에 멈춤 — …` · 담당 pane 에 `[자동 리뷰 → <에이전트>] … 머지하지 않았다` 를 한 번 보낸다
 - **결과가 없으면 기다린다** — 위험한 수정인데 이 HEAD 의 `- Security result:`(결과에 tree 가 있으면 같은 tree 일 때만 · tree 없는 옛 줄만 같은 sha — `securityResultFor`)가 없으면 세 길 모두 리뷰 문과 같은 시간(`ATHENA_DIRECT_REVIEW_TIMEOUT_MS` · 기본 20분)만큼 기다리고, 그래도 없으면 `보안 검토 기다리는 중 — …` 으로 멈춘다(결과가 남은 뒤 같은 명령으로 다시). diff 를 못 읽거나 띄우지 못하면 `보안 검토 못 함 — …` 으로 멈추고, 띄우지 못한 것은 아테나에 알린다(요청 · 아테나 pane — 손으로 띄울 명령을 담는다). PR 자동 리뷰가 보안 때문에 멈춘 HEAD 에 뒤에 `- Security result:`(높음 0 · 같은 sha · 멈춘 시각 이후)가 남으면 다음 확인이 리뷰를 다시 하지 않고 같은 라운드로 머지 단계를 이어 간다(`securityResumable` — 높음이 남으면 고친 커밋을 기다린다). 위험하지 않은 수정은 지금처럼 그냥 간다
 - 고친 뒤에는 security-reviewer 로 다시 검토해 줄을 바꿔야 문이 열린다(옛 높음은 다시 검토할 때까지 남는다)
-- 시험: `test/pr-auto-test.sh` "보안 검토 문(securityGate)" · PR 머지(위험+결과 없음 → 안 머지 · 높음 0 → 머지 · 위험 아님 → 안 띄우고 머지) · 바로 머지(feat/sec) · Actions 넘기기 경우 · pane 밖(Lead pane 옆 `--beside` · Lead pane 없음 → 못 띄움 · 알림) · 멈춘 HEAD 결과로 같은 라운드 이어 가기
+- 시험: `test/pr-auto-direct-test.sh` "보안 검토 문(securityGate)" · `test/pr-auto-merge-test.sh`(PR 머지 쪽) · PR 머지(위험+결과 없음 → 안 머지 · 높음 0 → 머지 · 위험 아님 → 안 띄우고 머지) · 바로 머지(feat/sec) · Actions 넘기기 경우 · pane 밖(Lead pane 옆 `--beside` · Lead pane 없음 → 못 띄움 · 알림) · 멈춘 HEAD 결과로 같은 라운드 이어 가기
 
 **첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off|direct [--review on|off] [--merge auto|confirm|manual]` (`on` = 자동 PR · `off` = 자동 흐름 없음 — 예전 뜻 그대로, 옛 앱이 보내도 바로 머지로 바뀌지 않는다 · `direct` = PR 없이 바로 머지) · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
 
@@ -167,7 +167,7 @@ PR #267(autoPr + autoMerge)은 PR 하나에 45.9분 · 리뷰 3번 · 검증 5�
 - **커밋은 빠른 확인만** — 자동 PR · 자동 머지 레포(`autoMerge: true` · Actions 넘기기 · PR 끔 · 사람이 직접 머지(`autoMergeManual` — 처리기가 검증을 안 돈다) 제외)의 `commit.sh` 는 지정 파일 문법만 본다(`.js` · `.mjs` · `.cjs` `node --check` · `.sh` `bash -n` · `.py` · `.json` — `.mts` 는 `node --check` 가 타입을 못 지워 뺀다). `commit` 사건은 `verified: false`. `ATHENA_VERIFY_FULL=1` 이면 예전대로 엄격 검증. 엄격 검증은 아래 PR 쪽 한 번으로 옮겼다
 - **1차: 리뷰 ‖ 검증** — 처리기가 리뷰어를 부르기 전에 같은 HEAD 검증(`reuse.sh` · 엄격 · 닿는 시험만 — `scripts/verify/scope-tests.mjs`)을 뒤에서 띄워 둘을 같이 돌린다. 같은 레포 · 워크트리 · HEAD 의 검증은 한 번만(통과는 머지 직전 확인이 재사용 · 실패는 다시). 리뷰가 승인이 아니면 그 검증을 멈춘다(고치는 중인 워크트리의 결과를 남기지 않게) · 이미 실패로 끝났으면 실패 원문을 수정 지시에 덧붙인다. security-reviewer 는 지금처럼 따로 · 기다리는 순서만 없앴다
 - **막는 기준** — `blocking` 은 **바뀐 줄이 일으키는 크리티컬만**(보안 높음 · 데이터 손실 · 실제 설정 · 입력으로 재현 경로가 있는 버그 · 레포 규칙 위반 — `problem` 에 재현 경로). 바뀌지 않은 코드 · 드문 사용자 설정 · 더 나은 방법은 `advisory` — PR 댓글과 함께 **PR 당 이슈 하나** `issues/<날짜>-<레포>-pr<번호>-리뷰-권장.md`(severity low · 머지를 막지 않음 · 다음 라운드는 새 지적만 덧붙인다 · `lib/pr-auto.mjs` `advisoryIssue`)
-- **PR 대상 브랜치는 지적하지 않는다** — base 는 올린 사람이 정한 것이라(그 브랜치에만 있는 기능을 고치는 `ship.sh --base dev` 등) 레포 규칙의 작업 base · PR 대상과 달라도 규칙 위반으로 막지 않는다. 프롬프트 판단 절에 그 한 줄이 있다(#328 짧은 리뷰가 dev 대상을 막은 뒤 · `test/pr-auto-test.sh`)
+- **PR 대상 브랜치는 지적하지 않는다** — base 는 올린 사람이 정한 것이라(그 브랜치에만 있는 기능을 고치는 `ship.sh --base dev` 등) 레포 규칙의 작업 base · PR 대상과 달라도 규칙 위반으로 막지 않는다. 프롬프트 판단 절에 그 한 줄이 있다(#328 짧은 리뷰가 dev 대상을 막은 뒤 · `test/pr-auto-diff-test.sh`)
 - **최대 3번** — 1차가 깨끗하면 2차 없이 머지 단계. 수정 필요면 크리티컬 · 검증 실패만 고치게 지시 → 고친 HEAD 는 바뀐 부분 2차 리뷰 ‖ 같은 커밋 검증 한 번 → 승인이면 머지 단계, 또 남으면 한 번 더 고쳐 3차 짧은 리뷰 ‖ 검증 → 승인이면 머지 단계, 그 뒤에도 남으면 멈추고 `[자동 리뷰 → 아테나]`
 - 머지 직전 검증은 마지막 검증 커밋이 머지할 커밋과 같으면 재사용 · base 가 앞서갔으면 다시(`_lib.sh` merge-base 열쇠)
 - **`--no-merge`**(시험용) — `node scripts/pr-auto.mjs --plan <계획서> --pr <레포>#<번호> --no-merge` 는 리뷰 ‖ 검증 · 댓글 · 수정 지시까지 실제로 다 하고 머지 바로 앞(같은 HEAD 검증 · 머지 전 검사 · 충돌 확인 통과 뒤)에서 멈춘다. 줄 `<승인> → 머지 안 함(--no-merge)` · `auto.stop`(`reason: no-merge`) · 측정 한 줄과 이 처리의 검증 실행 수를 찍는다. 고친 새 HEAD 는 현황판 처리기가 `--no-merge` 없이 다시 돈다 — 2차 · 3차도 멈추려면 그 HEAD 를 손으로 다시 `--no-merge` 로

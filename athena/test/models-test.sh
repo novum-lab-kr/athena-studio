@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 역할마다 모델 시험 — 팩 pack.json "models" 읽기(scripts/lib/models.mjs · 파이썬 athena_config.model_of 가 같은 판정) ·
 # delegate.sh 가 붙이는 --model(프로필 model: 이 이김 · 이상한 값이면 띄우지 않음 · 경량 → agentLight · 수정 필요 다음 reviewer → reviewerEscalated) · 경량 코어 기본값 Opus 5.5 · 한 번만 --model · 새 팩 기본값(athena init → learnReview sonnet · agentLight Opus 5.5)
-# (PR 자동 리뷰 Claude 쪽 --model 은 test/pr-auto-test.sh 가짜 리뷰어에서 본다) — 임시 폴더 · 진짜 claude 를 부르지 않는다 · 몇 초
+# (PR 자동 리뷰 Claude 쪽 --model 은 test/pr-auto-reviewers-test.sh 가짜 리뷰어에서 본다) — 임시 폴더 · 진짜 claude 를 부르지 않는다 · 몇 초
 #
 # 사용: test/models-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부

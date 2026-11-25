@@ -204,7 +204,7 @@ export const planReviewers = (config = {}, { claude: claudeOverride = '' } = {})
   }
   return { slots: [slot], note: lineupNote(slot) }
 }
-// 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
+// 시험(test/pr-auto-reviewers-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
 // inherited — 앞 리뷰 승인을 이어받은 리뷰어 결과(inheritedResult) 목록. 그 엔진 자리는 부르지 않고 그 결과를 자리 이름으로 쓴다
 // slots — planReviewers 결과(없으면 여기서 정한다)
 export const runReviewers = async (prompt, config = {}, inherited = [], slots = planReviewers(config).slots) => Promise.all(slots.map(async (slot, index) => {
