@@ -11,7 +11,7 @@
 
 ## 명령
 ```sh
-npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기 (새 워크트리는 코어 new-branch.sh 가 scripts/worktree-setup.sh 로 npm ci · Electron 설치까지 해 준다)
+npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena Dev.app 만들기 (새 워크트리는 코어 new-branch.sh 가 scripts/worktree-setup.sh 로 npm ci · Electron 설치까지 해 준다)
 npm start         # 코어 번들 · 화면 빌드(dist/renderer) 만들고 개발 앱 켜기(맥)
 npm run build:renderer # 화면만 빌드(vite build — 켤 때 저절로 돈다)
 npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목록은 package.json 에 손으로) · 끝에 화면 빌드(renderer .ts 문법)

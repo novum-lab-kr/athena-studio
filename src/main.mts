@@ -178,8 +178,11 @@ const CODEX_SESSIONS = path.join(process.env.CODEX_HOME || path.join(app.getPath
 const paneTokens = tokenUsage.createTokenUsage({ projectsDir: CLAUDE_PROJECTS, codexSessionsDir: CODEX_SESSIONS })
 // 앱이 들고 온 아테나 코어(git 번들) — 앱 리소스 자리 하나(개발 앱은 npm start 가 레포 athena/ 에서 만든다)
 const CORE_BUNDLE = studioHome.coreBundlePath({ appRoot: path.join(import.meta.dirname, '..'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
-// 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
-const APP_ICON = path.join(import.meta.dirname, 'renderer', 'assets', 'logo', 'athena-app-icon.png')
+// 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 개발 앱은 아래쪽 주황 DEV 띠를 얹은 것(scripts/dev-app.js ICON 과 같다).
+// 화면 안 로고는 화이트판(athena-logo-white.png)
+const APP_ICON = path.join(import.meta.dirname, 'renderer', 'assets', 'logo', app.isPackaged ? 'athena-app-icon.png' : 'athena-dev-app-icon.png')
+// 보이는 이름 — 개발 앱은 Athena Dev(메뉴 막대 · Dock 은 .dev-app/Athena Dev.app 번들 이름 · scripts/dev-app.js). 데이터 폴더 이름(IDENTITY.name)과 따로다
+const DISPLAY_NAME = app.isPackaged ? 'Athena' : 'Athena Dev'
 // 창 · 빈 옆 브라우저 바탕 — renderer style.css --bg 와 같은 값
 const APP_BACKGROUND = '#16171a'
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
@@ -751,7 +754,7 @@ function openThirdPartyNotices(): void {
 
 // Electron role 항목도 라벨을 사전에서 준다(role 기본 라벨은 영어 고정이라 앱 언어와 어긋난다)
 function appMenu(): MenuItemConstructorOptions {
-  const name = 'Athena' // 보이는 이름(트레이 · 정보 창과 같다) — app.getName() 은 데이터 폴더 이름 Athena Studio
+  const name = DISPLAY_NAME // 보이는 이름(정보 창과 같다) — app.getName() 은 데이터 폴더 이름 Athena Studio
   return {
     role: 'appMenu',
     submenu: [
@@ -1181,10 +1184,10 @@ app.whenReady().then(async () => {
   // 옮겼으면 Electron 이 앱을 끄고 옮긴 자리에서 다시 켠다(창을 열지 않는다). 못 옮기면 그대로 켜고 ⚙ 업데이트 줄이 까닭을 알린다
   if (moveToApplicationsAtLaunch()) return
   // 앱 데이터 폴더 이름(IDENTITY.name)은 맨 위에서 정했다 — 바꾸면 설정 · 데몬이 옮겨진다
-  // 보이는 이름은 Athena(메뉴 막대 · Dock 은 개발용 Athena.app — scripts/dev-app.js)
+  // 보이는 이름은 DISPLAY_NAME(메뉴 막대 · Dock 은 개발용 Athena Dev.app — scripts/dev-app.js)
   // 버전은 ⚙ 앱 업데이트 줄과 같은 번호(version 도 같게 — 괄호 안 Electron 번호가 붙지 않게)
-  app.setAboutPanelOptions({ applicationName: 'Athena', applicationVersion: appVersion(), version: appVersion() })
-  // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
+  app.setAboutPanelOptions({ applicationName: DISPLAY_NAME, applicationVersion: appVersion(), version: appVersion() })
+  // Dock 아이콘을 앱 아이콘으로(개발용 Athena Dev.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
   if (isMac && app.dock) app.dock.setIcon(APP_ICON)
   installPaneShortcuts()
   config = core.loadConfig(configFile())
