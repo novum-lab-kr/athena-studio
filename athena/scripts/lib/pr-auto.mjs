@@ -10,24 +10,23 @@
 // 자동 머지 합의 — 리뷰어 하나의 승인(+ 같은 HEAD 검증 통과 · 충돌 없음 · 결정 없음). 2026-11-08 사용자 결정으로 결정 D2 "Claude·Codex 둘 다 승인"을 바꿨다 —
 // 리뷰어는 주 도구 반대쪽 하나 · CLI 를 하나만 쓸 수 있으면 그 하나(아래 reviewerSlot). 리뷰어가 실패 · 로그인 안 됨 · 반려면 머지하지 않는다
 export const PR_REVIEWERS = 1
-// 리뷰 상한 — 같은 PR 에서 자동 리뷰는 이만큼만 돈다. 상한 라운드에도 승인이 아니면 멈추지 않고 이어받는다(2026-10-26 사용자 결정 C):
-// 남은 수정 지적을 에이전트에 보내고, 고친 새 HEAD(라운드 > 상한)는 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰한다(2026-11-03 계획서 "자동 리뷰 상한 뒤 마지막 수정도 짧게 리뷰").
-// 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 승인과 같은 머지 단계 · 막는 지적이나 리뷰어 실패면 머지하지 않고 멈춰 아테나에(결정 1)
-export const MAX_ROUNDS = 3
+// 상한 뒤 이어받음(2026-10-26 사용자 결정 C · 2026-11-03 결정 1) — 상한 라운드에도 승인이 아니면 남은 지적을 보내고, 고친 새 HEAD(라운드 > 상한)는
+// 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰한다. 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 머지 단계 · 막는 지적이나 리뷰어 실패면 멈춰 아테나에.
+// 상한은 아래 빠른 길(FAST_MAX_ROUNDS) 하나뿐이다 — 옛 기본 상한(3라운드 + 상한 뒤 이어받음)은 2026-11-25 지웠다. TAKEOVER 는 옛 줄 읽기(grantsTakeover)와
+// 지금도 쓰는 글(수정 지시 · 결정 대기 줄의 '결정 필요 — 상한 뒤 이어받음…' · 머지 요청 이유)에만 남는다
 export const TAKEOVER = '상한 뒤 이어받음'
 // ⚡ 빠른 길의 마지막 차례(3차 — 2차 지적을 고친 커밋의 짧은 리뷰)는 정상 단계 — 계획서 줄 · 댓글에 상한을 넘은 것처럼 보이지 않게 이 이름으로 쓴다(2026-11-09 · 2026-11-25 3번으로).
 //   길 · 판정은 상한 뒤 이어받음과 같다 — grantsTakeover 가 옛 줄(TAKEOVER · 리뷰가 최대 2번이던 때의 '2차')과 새 줄(FAST_LAST)을 같이 읽는다
 export const FAST_LAST = '3차'
 export const LEGACY_FAST_SECOND = '2차'
-export const takeoverLabel = (fast = false) => (fast ? FAST_LAST : TAKEOVER)
 export const REVIEW_OFF = '리뷰 끔'
-export const isTakeoverRound = (round, max = MAX_ROUNDS) => round > max
+export const isTakeoverRound = (round, max) => round > max
 // 상한 라운드가 이어받기를 허락했나 — 그 라운드가 쓴 줄('수정 필요 — 상한 뒤 이어받음…' · '결정 필요 — 상한 뒤 이어받음…' · 빠른 길은 '수정 필요 — 3차…' · '결정 필요 — 3차…' · 옛 '… — 2차…')로 시작할 때만.
 // 이어받은 HEAD 가 머지 단계로 간 뒤의 줄('상한 뒤 이어받음(…) → 머지 확인 대기' 등)은 아니다 — 그 뒤 온 커밋은 멈춘다(PR #20 자동 리뷰 지적)
 export const grantsTakeover = (result) => [TAKEOVER, FAST_LAST, LEGACY_FAST_SECOND].flatMap((label) => [`수정 필요 — ${label}`, `결정 필요 — ${label}`]).some((head) => String(result ?? '').startsWith(head))
 // 이 리뷰 라운드가 다음 커밋에 이어받기를 줄 수 있나 — 상한 라운드 · 승인 아님 · 리뷰어가 답했을 때만(실패한 라운드는 그 리뷰어가 본 적이 없으니 주지 않는다)
-// 빠른 길(아래)은 상한 2 — max · reviewers 로 그 값을 받는다
-export const takeoverEligible = (summary, round, { max = MAX_ROUNDS, reviewers = PR_REVIEWERS } = {}) => round >= max && ['changes', 'decision'].includes(summary.verdict)
+// 상한은 빠른 길(아래 FAST_MAX_ROUNDS) — 부르는 쪽이 max 를 넘긴다
+export const takeoverEligible = (summary, round, { max, reviewers = PR_REVIEWERS }) => round >= max && ['changes', 'decision'].includes(summary.verdict)
   && summary.total === reviewers && summary.answered === reviewers
 // 이어받은 HEAD 의 짧은 리뷰 — 리뷰어 하나 · 증분(지난 리뷰 HEAD 이후 diff + 지난 지적이 고쳐졌나). 결과는 셋:
 // approve(막는 지적 · 결정 없음 — 권장만은 승인) → 머지 단계 · blocked(막는 지적 · 결정) · failed(리뷰어가 답하지 못함) → 멈춤
@@ -40,14 +39,14 @@ export const shortReviewOutcome = (summary) => {
 }
 // 사건 auto.takeover 의 review 칸 · 계획서 줄의 멈춤 결과
 export const SHORT_REVIEW_LABEL = { approve: '승인', blocked: '막음', failed: '실패' }
-export const shortStopResult = (outcome, summary, fast = false) => {
-  if (outcome === 'failed') return `멈춤 — ${takeoverLabel(fast)} ${SHORT_REVIEW} 실패(리뷰어가 답하지 못함)`
+export const shortStopResult = (outcome, summary) => {
+  if (outcome === 'failed') return `멈춤 — ${FAST_LAST} ${SHORT_REVIEW} 실패(리뷰어가 답하지 못함)`
   const parts = [
     ...(summary.findings.length ? [`막는 지적 ${summary.findings.length}개`] : []),
     ...(summary.autoDecisions.length ? [`자동 확정할 결정 ${summary.autoDecisions.length}개`] : []),
     ...(summary.decisions.length ? [`결정 ${summary.decisions.length}개`] : []),
   ]
-  return `멈춤 — ${takeoverLabel(fast)} ${SHORT_REVIEW}에서 ${parts.join(' · ') || '막는 지적'}`
+  return `멈춤 — ${FAST_LAST} ${SHORT_REVIEW}에서 ${parts.join(' · ') || '막는 지적'}`
 }
 // 끝난 결과 — 이 PR 은 사람이 이어받았다. 새 커밋이 와도 자동 리뷰를 다시 돌지 않는다(계획서에서 그 줄을 지우면 다시 돈다).
 // 멈춤은 옛 상한 동작(2026-10-26 전)의 줄 — 지금 흐름은 라운드 상한으로 멈추지 않는다
@@ -62,9 +61,9 @@ export const BODY_EDITED = '본문 고침'
 // 레포 "fastPath" 키 · 계획서 "- Fast path:" 줄은 더 읽지 않는다(옛 팩 · 계획서에 남아 있어도 무시). 리뷰 끔(autoReview: false)이면 리뷰 없이(지금처럼)
 export const FAST_PATH = '⚡ 빠른 길'
 export const FAST_MAX_ROUNDS = 2
-// 계획서 줄 · 댓글의 라운드 분모 — 빠른 길은 리뷰가 최대 3번(1차 + 2차 + 3차 짧은 리뷰)이라 3으로 적는다(상한 판정은 FAST_MAX_ROUNDS 그대로 · 줄의 분모는 판정에 쓰지 않는다)
+// 계획서 줄 · 댓글 · 수정 지시의 라운드 분모 — 리뷰는 최대 3번(1차 + 2차 + 3차 짧은 리뷰)이라 3으로 적는다(상한 판정은 FAST_MAX_ROUNDS 그대로 · 줄의 분모는 판정에 쓰지 않는다).
+// 리뷰 끔 줄(라운드 1)도 같은 분모 — 옛 기본 상한(3)과 같은 값이라 줄 글은 그대로다
 export const FAST_REVIEWS = FAST_MAX_ROUNDS + 1
-export const shownMax = (max, fast = false) => (fast ? FAST_REVIEWS : max)
 // 설정 파일 — 하나라도 바뀌면 넓은 수정(wideChangeVerdict). scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE("전체로 가는" 목록)와 같아야 한다(test/pr-auto-unit-test.sh 가 원문 비교)
 export const CONFIG_FILE_RE = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.nvmrc|vite\.config\.[a-z]+|pyproject\.toml|pyrightconfig\.json|requirements[^/]*\.txt|\.github\/.+)$|(^|\/)scripts\/verify\//
 // 계획서 1절에 이 말이 있으면 넓은 수정(보안 · 외부 계약 · 데이터에 닿는 일) — 1절(## 1. …)부터 다음 ## 까지만 본다
@@ -399,8 +398,8 @@ export const autoLines = (planText) => {
   return found
 }
 // note(앞 리뷰 승인 이어받음 등)는 결과 뒤에 붙인다 — 결과는 앞부분(startsWith)으로만 읽으니 판정이 바뀌지 않는다
-// fast — 빠른 길 줄이면 분모를 FAST_REVIEWS 로(shownMax · 읽을 때 max 칸은 판정에 쓰지 않는다)
-export const autoLineText = ({ repo, number, sha, result, note = '', round, max = MAX_ROUNDS, fast = false, stamp }) => `- Auto review: ${repo}#${number} @${String(sha).slice(0, 7)} · ${result}${note ? ` · ${note}` : ''} · 라운드 ${round}/${shownMax(max, fast)} · ${stamp}`
+// 분모는 늘 FAST_REVIEWS(읽을 때 max 칸은 판정에 쓰지 않는다)
+export const autoLineText = ({ repo, number, sha, result, note = '', round, stamp }) => `- Auto review: ${repo}#${number} @${String(sha).slice(0, 7)} · ${result}${note ? ` · ${note}` : ''} · 라운드 ${round}/${FAST_REVIEWS} · ${stamp}`
 // 계획서에 이 줄을 넣거나 바꾼 새 글 — 같은 PR 줄이 있으면 그 자리, 없으면 Work ref 뒤
 export const withAutoLine = (planText, entry) => {
   const line = autoLineText(entry)
@@ -494,7 +493,7 @@ export const securityResumeOf = (result, fast) => {
   const approved = passed.match(/^승인 (\d+)\/\d+이지만/)
   if (approved) return { summary: { approvals: Number(approved[1]) }, reviewOff: false, takeover: false }
   if (passed.startsWith(`${REVIEW_OFF}(`)) return { summary: null, reviewOff: true, takeover: false }
-  if ([takeoverLabel(fast), ...(fast ? [LEGACY_FAST_SECOND] : [])].some((label) => passed.startsWith(`${label}(`))) return { summary: { approvals: 1 }, reviewOff: false, takeover: true }
+  if ((fast ? [FAST_LAST, LEGACY_FAST_SECOND] : [TAKEOVER]).some((label) => passed.startsWith(`${label}(`))) return { summary: { approvals: 1 }, reviewOff: false, takeover: true }
   return null
 }
 // ── 대상 계획서 Status — ship.sh(push 직후) · 현황판(안전망)이 같이 쓴다 ─────────────
@@ -625,9 +624,10 @@ const oneLine = (text, size) => {
 }
 // PR 댓글 본문 — 리뷰어마다 결론 · 요약 · 지적 · 리뷰어 구성(lineup — lineupNote)
 // partial — diff 를 다 넣지 못해 못 본 코드 파일 수(0 이면 다 봤다 · packDiff)
-// max · reviewers — 라운드 상한 · 승인에 필요한 리뷰어 수(PR_REVIEWERS — 하나 · 빠른 길은 상한 2 — fast 면 머리에 표시)
-// short — 상한 뒤 이어받은 HEAD 의 짧은 리뷰(리뷰어 하나 · 다음 이어받기는 없다)
-export const reviewComment = ({ sha, round, results, summary, lineup = '', partial = 0, max = MAX_ROUNDS, reviewers = PR_REVIEWERS, fast = false, short = false }) => {
+// reviewers — 승인에 필요한 리뷰어 수(PR_REVIEWERS — 하나) · 라운드 상한은 빠른 길(FAST_MAX_ROUNDS — 머리에 표시)
+// short — 상한 뒤 이어받은 HEAD 의 짧은 리뷰(3차 · 리뷰어 하나 · 다음 이어받기는 없다)
+export const reviewComment = ({ sha, round, results, summary, lineup = '', partial = 0, reviewers = PR_REVIEWERS, short = false }) => {
+  const max = FAST_MAX_ROUNDS
   const notes = []
   if (partial) notes.push(`**⚠️ diff 가 길어 코드 파일 ${partial}개를 다 넣지 못했다** — 리뷰어가 일부만 봤다.${summary.verdict === 'approve' ? ' 이 승인은 머지 승인으로 세지 않고 사람 확인으로 넘긴다' : ''}`)
   if (summary.advisories?.length) notes.push(`**💡 권장 ${summary.advisories.length}개는 머지를 막지 않는다** — 에이전트에 보내지 않고 이 댓글에만 남긴다`)
@@ -635,15 +635,13 @@ export const reviewComment = ({ sha, round, results, summary, lineup = '', parti
     notes.push('**추천안으로 자동 확정(구현 세부 — 사람을 기다리지 않음)**', ...summary.autoDecisions.map((item) => `- ${oneLine(item.title, 200)} → **${oneLine(item.recommended, 80)}** (${item.by})`))
   }
   const limits = { max, reviewers }
-  if (short) notes.push(shortReviewNote(shortReviewOutcome(summary), max, fast))
+  if (short) notes.push(shortReviewNote(shortReviewOutcome(summary)))
   else if (round >= max && ['changes', 'decision'].includes(summary.verdict) && !takeoverEligible(summary, round, limits)) {
     notes.push(`**이어받지 않음** — 리뷰 상한(${max})인데 리뷰어가 답하지 못했다(리뷰어 부족). 고친 커밋은 자동으로 머지하지 않고 멈춘다 — 사람이 이어받는다`)
-  } else if (takeoverEligible(summary, round, limits) && fast) {
-    notes.push(`**${FAST_LAST}로** — ${FAST_PATH}은 리뷰가 최대 ${FAST_REVIEWS}번이다. 지적을 고친 커밋은 리뷰어 하나가 바뀐 부분만 짧게 보고(${FAST_LAST} · 마지막), 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 머지 단계로 간다(막는 지적이 남으면 멈추고 아테나가 이어받는다)${summary.verdict === 'decision' ? '(사람이 정할 결정은 결정 콘솔 — 다 정할 때까지 머지하지 않는다)' : ''}`)
   } else if (takeoverEligible(summary, round, limits)) {
-    notes.push(`**${TAKEOVER}** — 리뷰 상한(${max})이라 전체 리뷰는 더 돌지 않는다. 남은 지적을 고친 커밋은 리뷰어 하나가 바뀐 부분만 짧게 보고, 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 머지 단계로 간다(막는 지적이 남으면 멈추고 아테나가 이어받는다)${summary.verdict === 'decision' ? '(사람이 정할 결정은 결정 콘솔 — 다 정할 때까지 머지하지 않는다)' : ''}`)
+    notes.push(`**${FAST_LAST}로** — ${FAST_PATH}은 리뷰가 최대 ${FAST_REVIEWS}번이다. 지적을 고친 커밋은 리뷰어 하나가 바뀐 부분만 짧게 보고(${FAST_LAST} · 마지막), 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 머지 단계로 간다(막는 지적이 남으면 멈추고 아테나가 이어받는다)${summary.verdict === 'decision' ? '(사람이 정할 결정은 결정 콘솔 — 다 정할 때까지 머지하지 않는다)' : ''}`)
   }
-  const head = `### 🤖 자동 리뷰 — ${fast ? `${FAST_PATH} · ` : ''}${short ? `${takeoverLabel(fast)} · ${SHORT_REVIEW} · ` : ''}라운드 ${round}/${shownMax(max, fast)} · @${String(sha).slice(0, 7)}`
+  const head = `### 🤖 자동 리뷰 — ${FAST_PATH} · ${short ? `${FAST_LAST} · ${SHORT_REVIEW} · ` : ''}라운드 ${round}/${FAST_REVIEWS} · @${String(sha).slice(0, 7)}`
   const verdictText = { approve: '승인', changes: '수정 필요', decision: '결정 필요', insufficient: `리뷰어 부족(승인 ${summary.approvals}/${reviewers} · 리뷰어가 답해야 머지)` }[summary.verdict]
   const rows = results.map((result) => {
     if (result.status !== 'ok') return `- **${result.name}** — ${result.status === 'unavailable' ? '못 씀' : '실패'}(${oneLine(result.reason, 120)})`
@@ -659,17 +657,17 @@ export const reviewComment = ({ sha, round, results, summary, lineup = '', parti
 }
 
 // 짧은 리뷰 댓글의 끝 줄 — 승인이면 머지 단계로 · 아니면 멈춤
-const shortReviewNote = (outcome, max, fast = false) => {
-  if (outcome === 'approve' && fast) return `**${FAST_LAST} — 바뀐 부분 ${SHORT_REVIEW} 승인.** 2차 지적을 고친 커밋이라 리뷰어 하나가 지난 리뷰 이후 바뀐 부분만 봤다. 안 정한 결정 없음 · 같은 HEAD 엄격 검증 · 충돌 없음을 확인한 뒤 승인과 같은 머지 단계(머지 확인 요청 · 레포 설정이면 바로)로 간다`
-  if (outcome === 'approve') return `**${TAKEOVER} — 바뀐 부분 ${SHORT_REVIEW} 승인.** 리뷰 상한(${max}) 뒤 고친 커밋이라 리뷰어 하나가 지난 리뷰 이후 바뀐 부분만 봤다. 안 정한 결정 없음 · 같은 HEAD 엄격 검증 · 충돌 없음을 확인한 뒤 승인과 같은 머지 단계(머지 확인 요청 · 레포 설정이면 바로)로 간다`
+const shortReviewNote = (outcome) => {
+  if (outcome === 'approve') return `**${FAST_LAST} — 바뀐 부분 ${SHORT_REVIEW} 승인.** 2차 지적을 고친 커밋이라 리뷰어 하나가 지난 리뷰 이후 바뀐 부분만 봤다. 안 정한 결정 없음 · 같은 HEAD 엄격 검증 · 충돌 없음을 확인한 뒤 승인과 같은 머지 단계(머지 확인 요청 · 레포 설정이면 바로)로 간다`
   if (outcome === 'failed') return `**멈춤 — ${SHORT_REVIEW} 실패.** 리뷰어가 답하지 못해 머지하지 않는다 — 아테나가 이어받는다`
   return `**멈춤 — ${SHORT_REVIEW}에서 막는 지적.** 리뷰 상한 뒤라 다시 고치게 하지 않고 머지하지 않는다 — 아테나가 이어받는다`
 }
 
 // 작업 에이전트 pane 에 보낼 수정 지시 한 줄 — 지적 전문은 PR 댓글에 있다
 // autoDecisions — 추천안으로 자동 확정한 결정(구현 세부)도 고칠 것으로 함께 · humanDecisions — 결정 콘솔에 올린 수(따로 온다)
-// takeover — 이 라운드가 이어받기를 준다(takeoverEligible) · 상한인데 주지 않으면 그 사실을 알린다 · fast — 라운드 분모를 리뷰 횟수로(shownMax)
-export const fixInstruction = ({ agent, org, repo, number, sha, round, findings, autoDecisions = [], humanDecisions = 0, takeover = false, plan, worktree, athenaDir, max = MAX_ROUNDS, fast = false }) => {
+// takeover — 이 라운드가 이어받기를 준다(takeoverEligible) · 상한(FAST_MAX_ROUNDS)인데 주지 않으면 그 사실을 알린다 · 라운드 분모는 리뷰 횟수(FAST_REVIEWS)
+export const fixInstruction = ({ agent, org, repo, number, sha, round, findings, autoDecisions = [], humanDecisions = 0, takeover = false, plan, worktree, athenaDir }) => {
+  const max = FAST_MAX_ROUNDS
   const list = findings.slice(0, 6).map((item, index) => `${index + 1}) ${item.file}${item.line ? `:${item.line}` : ''} ${oneLine(item.problem, 160)} → ${oneLine(item.fix, 160)}`).join(' ')
   const fixes = findings.length ? ` 수정 필요: ${list}${findings.length > 6 ? ` 외 ${findings.length - 6}개` : ''}.` : ''
   const decided = autoDecisions.length ? ` 추천안으로 자동 확정한 결정(구현 세부 — 그대로 반영): ${autoDecisions.slice(0, 5).map((item, index) => `D${index + 1}) ${oneLine(item.title, 120)} → ${oneLine(item.recommended, 80)}`).join(' ')}.` : ''
@@ -677,7 +675,7 @@ export const fixInstruction = ({ agent, org, repo, number, sha, round, findings,
   let limit = ''
   if (takeover) limit = ` 리뷰 상한(${max}) — 이번에 올린 커밋은 리뷰어 하나가 바뀐 부분만 짧게 보고, 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 머지 단계로 간다(${TAKEOVER}). 막는 지적이 남으면 다시 고칠 기회 없이 멈추니 지적을 빠짐없이 고치고 검증 스크립트를 통과하게 한다.`
   else if (round >= max) limit = ` 리뷰 상한(${max}) · 답하지 못한 리뷰어가 있어 이어받지 않는다 — 고친 커밋은 자동으로 머지되지 않고 사람이 이어받는다.`
-  return oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} 라운드 ${round}/${shownMax(max, fast)} —${fixes}${decided}${pending}${limit} 전문: gh pr view ${number} --repo ${org}/${repo} --comments. 자동 흐름 예외(이 지시에만): 고친 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <파일>… 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(새 커밋을 자동 리뷰가 다시 본다). PR 본문 지적이면 본문 파일을 고쳐 --auto-push --body-file <파일> 로(커밋이 없어도 된다). 고칠 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 3500)
+  return oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} 라운드 ${round}/${FAST_REVIEWS} —${fixes}${decided}${pending}${limit} 전문: gh pr view ${number} --repo ${org}/${repo} --comments. 자동 흐름 예외(이 지시에만): 고친 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <파일>… 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(새 커밋을 자동 리뷰가 다시 본다). PR 본문 지적이면 본문 파일을 고쳐 --auto-push --body-file <파일> 로(커밋이 없어도 된다). 고칠 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 3500)
 }
 
 export const decisionNotice = ({ agent, repo, number, sha, count, plan, worktree, athenaDir }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — 결정 필요 ${count}개를 결정 콘솔(${plan})에 올렸다. 사람이 확정하면 그 지시가 이 pane 으로 온다 — 반영한 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh … 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(자동 흐름 예외)`, 2000)
