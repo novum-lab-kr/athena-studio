@@ -55,6 +55,18 @@ test('사이트 응답 없음 — 응답 확인이 실패하면 · 응답이 오
   assert.deepEqual(run([reading(0, healthy(), failing), reading(5 * MINUTE, healthy(), failing), reading(10 * MINUTE, healthy(), okWeb())]), [['problem:web:'], [], ['recovered:web:']])
 })
 
+test('사이트 5xx — 문제 한 번 · 코드가 바뀌어도 같은 문제 · 닿지 않음으로 바뀌어도 같은 문제 · 4xx 는 문제 아님 · 2xx 면 회복', () => {
+  const steps = run([
+    reading(0, healthy(), okWeb({ code: 503 })),
+    reading(5 * MINUTE, healthy(), okWeb({ code: 502 })),
+    reading(10 * MINUTE, healthy(), { ok: false, reason: 'timeout' }),
+    reading(15 * MINUTE, healthy(), okWeb({ code: 200 })),
+    reading(20 * MINUTE, healthy(), okWeb({ code: 404 })),
+    reading(25 * MINUTE, healthy(), okWeb({ code: 500 })),
+  ])
+  assert.deepEqual(steps, [['problem:web:'], [], [], ['recovered:web:'], [], ['problem:web:']])
+})
+
 test('인증서 14일 안 — 처음 한 번 · 남아 있으면 하루에 한 번 다시 · 갱신되면 회복', () => {
   const memory = {}
   const soon = okWeb({ certDays: 10 })
@@ -103,6 +115,7 @@ test('알림 글 — 서버 이름 · 무엇이 문제인지만(주소 · 원문
   assert.deepEqual(alertText(event('problem', 'failed', 'nginx', 'nginx'), say), { title: 'serverAlert.problem {"server":"web1"}', body: 'serverAlert.failed {"name":"nginx"}' })
   assert.equal(alertText(event('problem', 'down', '', 'timeout'), say).body, 'serverAlert.down {"reason":"server.reason.timeout"}')
   assert.equal(alertText(event('problem', 'web', '', 'cert'), say).body, 'serverAlert.web {"reason":"server.web.cert"}')
+  assert.equal(alertText(event('problem', 'web', '', 503), say).body, 'server.warn.http {"code":503}')
   assert.equal(alertText(event('problem', 'cert', '', -2), say).body, 'server.warn.certGone')
   assert.deepEqual(alertText(event('recovered', 'disk', '/var', 95), say), { title: 'serverAlert.recovered {"server":"web1"}', body: 'serverAlert.ok.disk {"name":"/var","mount":"/var"}' })
 })

@@ -1,13 +1,13 @@
 // 서버 문제 알림 판정(계획서 plans/feature/20261125-서버-문제-알림.md 결정 D1 · 5절) — 읽기 결과(server-status ServerReading)를 받아
 // 새로 생긴 문제 · 풀린 문제를 사건으로 낸다. Electron 없이 돌아 `npm test` 로 검사한다(test/server-alert.test.js). 알림 글 · 보내기는 부르는 쪽(src/main/server-alert.mts)
-// 문제(D1): 서비스 멈춤(failed — 서비스마다) · 사이트 응답 없음(web) · 서버 접속 안 됨(down — 연속 2번) · 디스크 90% 넘음(disk — 마운트마다) ·
+// 문제(D1): 서비스 멈춤(failed — 서비스마다) · 사이트 응답 없음(web — 응답 확인 실패 · 5xx) · 서버 접속 안 됨(down — 연속 2번) · 디스크 90% 넘음(disk — 마운트마다) ·
 //   인증서 14일 안 만료(cert — 남아 있으면 하루에 한 번 다시) · 메모리 90% 넘음(mem — 연속 2번 읽기)
 // 같은 문제(서버 + 종류 + 대상)는 처음 한 번만 · 풀리면 '회복됨' 한 번 · 풀렸다 다시 생기면 다시.
 // 그 읽기로 볼 수 없는 문제(접속 실패 중의 디스크 · 응답 확인 실패 중의 인증서 등)는 풀린 것으로 치지 않는다
 import type { ServerReading } from './server-status.mts'
 
 export type AlertKind = 'down' | 'failed' | 'web' | 'disk' | 'mem' | 'cert'
-// value — 글에 쓸 값(down · web 은 이유 이름 · disk · mem 은 % · cert 는 남은 날) · target — 서비스 이름 · 마운트(없으면 '')
+// value — 글에 쓸 값(down · web 은 이유 이름 — web 5xx 는 응답 코드 · disk · mem 은 % · cert 는 남은 날) · target — 서비스 이름 · 마운트(없으면 '')
 export type AlertIssue = { kind: AlertKind; target: string; value: string | number }
 export type AlertEvent = AlertIssue & { type: 'problem' | 'recovered'; server: string }
 type Active = { since: number; told: number; value: string | number }
@@ -39,7 +39,9 @@ export function issuesOf(reading: ServerReading): AlertIssue[] {
     }
     if ((status.memPercent ?? 0) > LIMIT_PERCENT) list.push({ kind: 'mem', target: '', value: status.memPercent ?? 0 })
   }
+  // 사이트 문제 — 응답 확인 실패(이유 이름) · 5xx 응답(코드 숫자 · 2026-11-25 사용자 결정 · 서버 칸 경고와 같은 기준)
   if (web && !web.ok) list.push({ kind: 'web', target: '', value: web.reason })
+  if (web?.ok && web.code >= 500) list.push({ kind: 'web', target: '', value: web.code })
   if (web?.ok && web.certDays !== null && web.certDays < CERT_DAYS) list.push({ kind: 'cert', target: '', value: web.certDays })
   return list
 }
@@ -120,6 +122,7 @@ export function alertText(event: AlertEvent, say: AlertSay): { title: string; bo
   }
   const title = say('serverAlert.problem', { server })
   if (event.kind === 'down') return { title, body: say('serverAlert.down', { reason: say(`server.reason.${event.value}`) }) }
+  if (event.kind === 'web' && typeof event.value === 'number') return { title, body: say('server.warn.http', { code: event.value }) }
   if (event.kind === 'web') return { title, body: say('serverAlert.web', { reason: say(`server.web.${event.value}`) }) }
   if (event.kind === 'failed') return { title, body: say('serverAlert.failed', { name: event.target }) }
   if (event.kind === 'disk') return { title, body: say('server.warn.disk', { mount: event.target, percent: event.value }) }
