@@ -111,7 +111,6 @@
   "status.done": "✅ 完成",
   "status.open": "📌 待办",
   "status.wontfix": "🚫 不做",
-  "chip.fastPath": "⚡ fast path",
   "chip.archived": "🗄 归档 {at}",
   "history.openConsole": "打开决定控制台 ↗",
   "history.bundle": "📎 问题+计划书",

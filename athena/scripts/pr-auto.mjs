@@ -26,8 +26,8 @@
  *   - 같은 PR · 같은 HEAD 는 한 번만(계획서 "- Auto review:" 줄) · 리뷰는 상한(MAX_ROUNDS)까지 — 상한 라운드에도 승인이 아니면 남은 지적을 보내고,
  *     고친 새 HEAD 는 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰해 승인이면 ②③(+④)로 머지 단계, 막는 지적 · 리뷰어 실패면 멈추고 아테나에
  *     (상한 뒤 이어받음 · 2026-10-26 사용자 결정 C → 2026-11-03 계획서 "자동 리뷰 상한 뒤 마지막 수정도 짧게 리뷰" 결정 1)
- *   - ⚡ 빠른 길(계획서 "- Fast path: yes" — ship.sh 가 PR 올리기 직전에 판정) — 리뷰어는 평소와 같은 하나 · 상한 1(FAST_MAX_ROUNDS). 1라운드 수정 필요면 고친 HEAD 는
- *     상한 뒤 이어받음과 같은 길로 짧은 리뷰 → 승인이면 머지 단계(auto.takeover) · 그 뒤 또 커밋이면 멈춤(auto.stop rounds — 아테나가 이어받는다). 레포 "fastPath": false 면 늘 3라운드(2026-10-31 계획서 D1 · D2)
+ *   - ⚡ 빠른 길(리뷰를 켠 PR 모두) — 리뷰어는 평소와 같은 하나 · 상한 1(FAST_MAX_ROUNDS). 1라운드 수정 필요면 고친 HEAD 는
+ *     상한 뒤 이어받음과 같은 길로 짧은 리뷰 → 승인이면 머지 단계(auto.takeover) · 그 뒤 또 커밋이면 멈춤(auto.stop rounds — 아테나가 이어받는다)(2026-10-31 계획서 D1 · D2 · 2026-11-25 fastPath 옵션 없앰)
  *   - 결정 필요여도 수정 지적은 같은 라운드에 보낸다(결정 A) · 구현 세부 결정은 추천안으로 자동 확정(결정 B) · 사람이 정할 결정이 결정 콘솔에 남아 있으면 머지하지 않는다
  *   - 지적은 한 번에(결정 D) — 1라운드는 찾을 수 있는 것을 모두, 2라운드부터는 지난 지적이 고쳐졌는지 + 지난 리뷰 HEAD 이후 바뀐 diff 만(지난 지적은 history/ 에)
  *   - 막는 지적만 막는다(결정 E) — 지적마다 blocking · advisory. 권장(advisory)만 남으면 승인으로 보고 PR 댓글에만 남긴다
@@ -57,7 +57,7 @@ import {
   PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
-  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planFastPathFlags, planWideMark, wideChangeVerdict,
+  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planRiskFlags, planWideMark, wideChangeVerdict,
 } from './lib/pr-auto.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -524,9 +524,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
   const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
   const flow = repoFlow(config, repo)
-  // ⚡ 빠른 길 — 레포가 켜 두었으면(fastPath 기본 true) 모든 PR(2026-11-08 #267 46분 — 리뷰는 PR 마다 최대 2번: 1차 전체 → 고친 커밋 2차 짧은 리뷰 → 남으면 멈춤).
-  // 예전에는 ship.sh 가 계획서에 "- Fast path: yes" 를 적은 작은 PR 만이었다 — 그 줄은 이제 표시일 뿐. 레포 "fastPath": false 면 옛 흐름(상한 3). 리뷰 끔 레포는 어차피 리뷰어를 부르지 않는다
-  const fast = flow.review && flow.fast
+  // ⚡ 빠른 길 — 리뷰를 켠 모든 PR(2026-11-08 #267 46분 — 리뷰는 PR 마다 최대 2번: 1차 전체 → 고친 커밋 2차 짧은 리뷰 → 남으면 멈춤).
+  // 레포 "fastPath" 키 · 계획서 "- Fast path:" 줄은 읽지 않는다(2026-11-25 옵션 없앰 — 옛 팩에 있어도 무시). 리뷰 끔 레포는 어차피 리뷰어를 부르지 않는다
+  const fast = flow.review
   const limits = { max: fast ? FAST_MAX_ROUNDS : MAX_ROUNDS, reviewers: PR_REVIEWERS }
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${limits.max}${fast ? ` · ${FAST_PATH}` : ''}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto', ...(fast ? { fast: true } : {}) }
@@ -1097,7 +1097,7 @@ const directReviewGate = async (job, planPath) => {
   if (git(worktree, ['fetch', '--quiet', 'origin', base]) === null) return stop(`검증 대기 — origin/${base} 를 가져오지 못함`, 'fetch')
   const files = numstatFiles(git(worktree, ['diff', '--numstat', `origin/${base}...HEAD`]))
   const planText = readFileSync(planPath, 'utf8')
-  const verdict = wideChangeVerdict({ files, flagged: planFastPathFlags(planText), marked: planWideMark(planText) })
+  const verdict = wideChangeVerdict({ files, flagged: planRiskFlags(planText), marked: planWideMark(planText) })
   if (!verdict.wide) { console.log(`  리뷰 없이 — 넓은 수정 아님(${verdict.why})`); return true }
   const tree = git(worktree, ['rev-parse', 'HEAD^{tree}'])
   const latest = () => latestReviewResult(readFileSync(planPath, 'utf8'), { repo, branch, sha, tree })
@@ -1358,9 +1358,9 @@ export const checkConfirms = async (only = '') => {
     const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round, note: job.note ?? '', ...(job.max ? { max: job.max } : {}), fast: Boolean(job.fast) }
     const pr = ghJson(['pr', 'view', String(job.number), '--repo', `${org}/${job.repo}`, '--json', 'state,isDraft,headRefOid,mergeable,baseRefName,title'])
     if (!pr) { release(); continue }
-    // 설정이 바뀜 — 자동 흐름을 껐거나 · 사람이 직접으로 돌렸거나 · 리뷰 없이 온 건인데 리뷰를 다시 켰거나 · 빠른 길로 온 건인데 빠른 길을 껐다
+    // 설정이 바뀜 — 자동 흐름을 껐거나 · 사람이 직접으로 돌렸거나 · 리뷰 없이 온 건인데 리뷰를 다시 켰거나 · 빠른 길(PR 리뷰)로 온 건인데 PR 을 껐다
     const flowNow = repoFlow(config, job.repo)
-    const settingChanged = !autoMergeRepos(config).has(job.repo) || flowNow.merge === 'manual' || (Boolean(job.reviewOff) && flowNow.review) || (Boolean(job.fast) && !flowNow.fast)
+    const settingChanged = !autoMergeRepos(config).has(job.repo) || flowNow.merge === 'manual' || (Boolean(job.reviewOff) && flowNow.review) || (Boolean(job.fast) && !flowNow.pr)
     // auto.merge 사건의 공통 칸(빠른 길이면 fast: true)
     const mergeEvent = (extra) => logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ...(job.fast ? { fast: true } : {}), ...extra })
     // 확인한 뒤 PR base 가 바뀜 — 머지 대상이 달라졌다(옛 대기 파일에는 base 가 없을 수 있다)

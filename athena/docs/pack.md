@@ -176,7 +176,6 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
       // "autoMergeConfirm": false,       // autoMerge 가 true 일 때만 — 머지 직전 사람 확인 없이 바로 머지 · 없거나 true 면 확인
       // "actionsHandoff": true,            // autoPr false + autoMergeConfirm false 일 때만 — 전체 검증 · 머지를 GitHub Actions 로 넘긴다(docs/pr-auto.md "Actions 로 넘기기")
       // "autoMergeManual": true,          // autoMerge 가 true 일 때만 — 사람이 직접 머지(autoMergeConfirm 보다 먼저)
-      // "fastPath": false,                // autoMerge 가 true 일 때만 — ⚡ 빠른 길 끔(작은 PR 도 상한 3) · 없으면 켬(docs/pr-auto.md "빠른 길")
       // "githubIssues": true,             // GitHub 이슈 감시 — 현황판이 5분마다 열린 이슈를 issues/ 로 가져와 새 아테나 pane 에 맡긴다(docs/github-issues.md) · 기본 꺼짐
       // "generated": ["data/fare/**"],  // (선택) PR 자동 리뷰가 diff 본문에서 뺄 생성물 경로(gitattributes 식 패턴 · 크기 무관) — 없으면 일반 기준만(docs/pr-auto.md "큰 diff")
       // "redCheck": { "tests": ["test/**/*.test.js"], "run": "node --test {files}" },   // (선택) red-check — 아래 "redCheck"

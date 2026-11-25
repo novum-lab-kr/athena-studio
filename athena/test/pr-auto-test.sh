@@ -12,7 +12,7 @@
 # 안 정한 결정이 결정 콘솔에 있으면 머지 안 함 · 지적은 한 번에(결정 D — 2라운드는 지난 지적 + 지난 HEAD 이후 diff) · 막는 지적만 막기(결정 E — 권장만이면 승인) ·
 # 완료된 계획서에 이어 올린 PR(PR #28 재현 — done · planned 는 ready_for_review 로 되돌려 대기열에 · blocked 는 그대로) ·
 # 큰 diff(syung#12 · #23 재현 — 생성물은 빼고 코드 파일부터 · 잘린 · 빠진 파일 목록 · 잘린 diff 승인은 머지 승인 아님)
-# ⚡ 빠른 길(2026-10-31 D1 · D2 — 계획서 '- Fast path: yes' 면 상한 1(리뷰어는 평소와 같은 하나) · 수정 1회 뒤 새 HEAD 는 짧은 리뷰 승인이면 머지 · 두 번째 수정은 멈춤 · fastPath:false 레포는 옛 흐름 · 판정 fastPathVerdict · 설정 파일 정규식은 _lib.sh 와 원문 비교)
+# ⚡ 빠른 길(2026-10-31 D1 · D2 — 리뷰 켠 PR 은 모두 상한 1(리뷰어는 평소와 같은 하나) · 수정 1회 뒤 새 HEAD 는 짧은 리뷰 승인이면 머지 · 두 번째 수정은 멈춤 · 2026-11-25 fastPath 옵션 · Fast path 줄 없앰 · 설정 파일 정규식은 _lib.sh 와 원문 비교)
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,7 +22,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, inheritedSlotIndex, CLAUDE_LIMIT_REASON, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlot, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, PR_REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, SHORT_REVIEW, SHORT_REVIEWERS, shortReviewOutcome, shortStopResult, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_REVIEWS, FAST_SECOND, takeoverLabel, FAST_PATH_MAX_FILES, FAST_PATH_CONFIG_RE, planFastPathFlags, repoFastPath, fastPathVerdict, planFastPath, fastPathLineText, withFastPathLine, advisoryIssue, ADVISORY_ISSUE_SUFFIX, prMergeMethod } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, inheritedSlotIndex, CLAUDE_LIMIT_REASON, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlot, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, PR_REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, SHORT_REVIEW, SHORT_REVIEWERS, shortReviewOutcome, shortStopResult, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_REVIEWS, FAST_SECOND, takeoverLabel, advisoryIssue, ADVISORY_ISSUE_SUFFIX, prMergeMethod, CONFIG_FILE_RE, planRiskFlags } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 import { claudeLimited, CLAUDE_LIMIT_ERROR } from './scripts/lib/review-cli.mjs'
 import { readFileSync } from 'node:fs'
@@ -284,41 +284,17 @@ const limited = reviewerSlot({ main: 'codex', claude: 'limited' })
 check('Claude 한도 → Codex 하나 · 이유는 사용량 한도 · Codex 도 못 쓰면 못 씀', limited.kind === 'codex' && limited.why === CLAUDE_LIMIT_REASON && lineupNote(limited).endsWith(`— ${CLAUDE_LIMIT_REASON}`)
   && Boolean(reviewerSlot({ main: 'codex', claude: 'limited', codex: 'missing' }).unavailable), lineupNote(limited))
 
-console.log('\n⚡ 빠른 길(2026-10-31 D1 · D2 — 작은 PR 은 리뷰어 하나 · 상한 1)')
-check('상수 — 상한 1 · 파일 10개', FAST_MAX_ROUNDS === 1 && FAST_PATH_MAX_FILES === 10 && FAST_PATH === '⚡ 빠른 길')
+console.log('\n⚡ 빠른 길(2026-10-31 D1 · D2 — 리뷰어 하나 · 상한 1 · 2026-11-25 fastPath 옵션 없앰 — 리뷰 켠 PR 은 늘 이 흐름)')
+check('상수 — 상한 1', FAST_MAX_ROUNDS === 1 && FAST_PATH === '⚡ 빠른 길')
 const verifyLib = readFileSync('./scripts/verify/_lib.sh', 'utf8').match(/^VERIFY_SCOPE_CONFIG_RE='([^']+)'$/m)?.[1]
-check('설정 파일 정규식은 scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE 원문과 같다', Boolean(verifyLib) && FAST_PATH_CONFIG_RE.source.replace(/\\\//g, '/') === verifyLib, `${FAST_PATH_CONFIG_RE.source.replace(/\\\//g, '/')}\n      ${verifyLib}`)
-check('레포 흐름 — fastPath 없으면 켬 · false 면 끔 · PR 끔 · autoMerge 없음 · main 직접은 늘 false',
-  prFlow({ autoMerge: true }).fast === true && prFlow({ autoMerge: true, fastPath: false }).fast === false && prFlow({ autoMerge: true, autoPr: false }).fast === false
-  && prFlow({}).fast === false && prFlow({ autoMerge: true, direct: true }).fast === false
-  && repoFastPath({ repos: [{ name: 'web' }] }, 'web') === true && repoFastPath({ repos: [{ name: 'web', fastPath: false }] }, 'web') === false)
+check('설정 파일 정규식은 scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE 원문과 같다', Boolean(verifyLib) && CONFIG_FILE_RE.source.replace(/\\\//g, '/') === verifyLib, `${CONFIG_FILE_RE.source.replace(/\\\//g, '/')}\n      ${verifyLib}`)
+// 옛 키 fastPath 는 읽지 않는다 — false 를 줘도 흐름이 같다(2026-11-25)
+check('레포 흐름 — fast 칸 없음 · 옛 fastPath: false 는 무시(리뷰 그대로 켬)',
+  !('fast' in prFlow({ autoMerge: true })) && JSON.stringify(prFlow({ autoMerge: true, fastPath: false })) === JSON.stringify(prFlow({ autoMerge: true }))
+  && prFlow({ autoMerge: true, fastPath: false }).review === true)
 const section = (body) => `# x\n## 1. 요청\n${body}\n## 2. 다른 절\n보안 데이터 외부 계약\n`
 check('1절 표기 — 1절 본문의 보안 · 외부 계약 · 데이터만(다른 절은 안 봄 · 없으면 빈 배열)',
-  JSON.stringify(planFastPathFlags(section('로그인 보안 과 데이터 모양'))) === '["보안","데이터"]' && planFastPathFlags(section('문구만')).length === 0 && planFastPathFlags('본문만\n').length === 0)
-const smallFiles = ['src/a.js', 'src/b.js', 'docs/c.md']
-check('판정 — 레포 fastPath false → no', fastPathVerdict({ repoFast: false, files: smallFiles }).fast === false && fastPathVerdict({ repoFast: false, files: smallFiles }).why === '레포 fastPath: false')
-check('판정 — 설정 파일(package.json · .github · scripts/verify) → no · 이유에 경로(최대 3개 + 외 N개)',
-  fastPathVerdict({ files: ['src/a.js', 'package.json'] }).why === '설정 파일 package.json'
-  && fastPathVerdict({ files: ['.github/workflows/ci.yml', 'scripts/verify/web.sh', 'tsconfig.json', 'pnpm-lock.yaml'] }).why === '설정 파일 .github/workflows/ci.yml · scripts/verify/web.sh · tsconfig.json 외 1개'
-  && fastPathVerdict({ files: ['app/vite.config.ts'] }).fast === false)
-check('판정 — 파일 11개 → no · 10개 → yes', fastPathVerdict({ files: Array.from({ length: 11 }, (_, index) => `src/f${index}.js`) }).why === '파일 11개 > 10' && fastPathVerdict({ files: Array.from({ length: 10 }, (_, index) => `src/f${index}.js`) }).fast === true)
-check('판정 — 1절 표기 → no · 모두 통과 → yes (파일 N개)', fastPathVerdict({ files: smallFiles, flagged: ['보안'] }).why === '1절에 보안' && JSON.stringify(fastPathVerdict({ files: smallFiles })) === '{"fast":true,"why":"파일 3개"}')
-check('순서 — 레포 끔 > 설정 파일 > 파일 수 > 1절 표기', fastPathVerdict({ repoFast: false, files: ['package.json'], flagged: ['보안'] }).why === '레포 fastPath: false' && fastPathVerdict({ files: ['package.json'], flagged: ['보안'] }).why.startsWith('설정 파일'))
-const fastLine = fastPathLineText({ fast: true, why: '파일 3개' })
-check('계획서 줄 — "- Fast path: yes (파일 3개)" · 읽기 yes 만 true · no · 없음은 false', fastLine === '- Fast path: yes (파일 3개)' && planFastPath(`## Checkpoint\n${fastLine}\n`) && !planFastPath('- Fast path: no (파일 12개 > 10)\n') && !planFastPath(plan) && fastPathLineText({ fast: false }) === '- Fast path: no')
-const fastOnce = withFastPathLine(plan, { fast: false, why: '파일 12개 > 10' })
-const fastTwice = withFastPathLine(fastOnce, { fast: true, why: '파일 3개' })
-check('계획서 줄 — 없으면 Work ref 바로 뒤 · 있으면 덮어쓰기(줄이 늘지 않음) · Work ref 없으면 끝에',
-  /- Work ref:.*\n- Fast path: no \(파일 12개 > 10\)\n/.test(fastOnce) && (fastTwice.match(/^- Fast path:/gm) ?? []).length === 1 && planFastPath(fastTwice) && !planFastPath(fastOnce)
-  && withFastPathLine('본문만\n', { fast: true, why: 'x' }) === '본문만\n- Fast path: yes (x)\n', fastTwice)
-// Checkpoint 절 밖(본문 예시 · 옛 기록)의 줄은 판정으로 읽지 않고 덮어쓰지도 않는다(PR #200 자동 리뷰 지적)
-const bodyYes = `${plan}\n## 5. 메모\n- 예시: \`- Fast path: yes (파일 2개)\`\n- Fast path: yes (옛 기록)\n`
-const bodyYesWithNo = withFastPathLine(bodyYes, { fast: false, why: '파일 12개 > 10' })
-check('Checkpoint 밖의 yes 줄은 안 읽음 · Checkpoint 에 no 를 쓰면 본문 줄은 그대로 두고 Checkpoint 에만',
-  !planFastPath(bodyYes) && !planFastPath(bodyYesWithNo) && /- Work ref:.*\n- Fast path: no \(파일 12개 > 10\)\n/.test(bodyYesWithNo) && bodyYesWithNo.includes('- Fast path: yes (옛 기록)')
-  && !planFastPath(`- Fast path: yes (Checkpoint 없음)\n# 시험\n`), bodyYesWithNo)
-const noRef = withFastPathLine('# 시험\n## Checkpoint\n- Status: in_progress\n\n## 지시\n- Work ref: 본문\n', { fast: true, why: '파일 1개' })
-check('Checkpoint 에 Work ref 가 없으면 그 절 끝에(본문 Work ref 뒤가 아님) · planFastPath 가 읽음', noRef === '# 시험\n## Checkpoint\n- Status: in_progress\n- Fast path: yes (파일 1개)\n\n## 지시\n- Work ref: 본문\n' && planFastPath(noRef), noRef)
+  JSON.stringify(planRiskFlags(section('로그인 보안 과 데이터 모양'))) === '["보안","데이터"]' && planRiskFlags(section('문구만')).length === 0 && planRiskFlags('본문만\n').length === 0)
 check('집계 — 리뷰어 하나면 승인 1/1 로 승인 · 둘이면 하나 승인은 부족', aggregate([ok('claude', approve)], 1).verdict === 'approve' && aggregate([ok('claude', approve)], 1).approvals === 1 && aggregate([ok('claude', approve)], 2).verdict === 'insufficient' && aggregate([ok('claude', changes)], 1).verdict === 'changes')
 const fastComment = reviewComment({ sha: 'abcdef0123', round: 1, results: [ok('claude', changes)], summary: aggregate([ok('claude', changes)], 1), max: FAST_MAX_ROUNDS, reviewers: 1, fast: true })
 // 2026-11-09 — 빠른 길은 리뷰가 최대 2번이라 줄 · 댓글에 n/2 · '2차'(옛 '라운드 2/1 · 상한 뒤 이어받음' 은 상한을 넘은 것처럼 읽혔다 · 판정은 그대로)
@@ -605,7 +581,7 @@ MULTI_PURE="$(node --input-type=module -e "
 # 코어 scripts/ 를 임시 폴더에 복사하고 화면(scripts/screen) · gh · 검증(reuse.sh)을 가짜로 바꾼다. origin 은 로컬 bare 레포
 echo; echo "가짜 본체(ship.sh 본문 고침 · 머지 결과 알림)"
 CORE="$TMP/core"; mkdir -p "$CORE/plans/task"; cp -R scripts "$CORE/scripts"
-printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "fastPath": false, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
 FLOG="$TMP/fake.log"; : > "$FLOG"
 cat > "$CORE/scripts/screen" <<'SH'
 #!/bin/sh
@@ -754,20 +730,20 @@ write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3; printf -- '- `%s` f
 OUT="$(ship)"; CODE=$?
 expect "충돌로 검증 대기면 merge 커밋을 빨리 감기 push · 그 HEAD 가 대기열에" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ] && grep -lq "$MERGE_COMMIT" "$QUEUE"/*.json' "$OUT"
 rm -f "$QUEUE"/*.json
-# base 합침 merge 커밋은 라운드를 올리지 않는다 — 지난 줄이 3/3 이어도 멈추거나 이어받지 않고 그 라운드로 한 번 리뷰(--dry-run 으로 할 일만)
-sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
+# base 합침 merge 커밋은 라운드를 올리지 않는다 — 지난 줄이 상한(2/2)이어도 멈추거나 이어받지 않고 그 라운드로 한 번 리뷰(--dry-run 으로 할 일만)
+sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 2/2 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "base 합침 — 라운드 3/3 그대로 · 멈춤 · 이어받음 아님 · 리뷰를 돈다" 'echo "$OUT" | grep -q "라운드 3/3 · base 합침" && ! echo "$OUT" | grep -q "멈춤" && ! echo "$OUT" | grep -q "상한 뒤 이어받음 짧은 리뷰 —"' "$OUT"
-# athena-studio#97 모양 — 계획서 하나에 PR 이 여럿이라 Work ref 가 다른 PR 의 (지워진) 워크트리 · 줄은 "검증 대기 — 워크트리 HEAD 다름 · 3/3".
+expect "base 합침 — 라운드 2 그대로 · 멈춤 · 이어받음 아님 · 리뷰를 돈다" 'echo "$OUT" | grep -q "라운드 2/1 · ⚡ 빠른 길 · base 합침" && ! echo "$OUT" | grep -q "멈춤" && ! echo "$OUT" | grep -q "2차 짧은 리뷰 —"' "$OUT"
+# athena-studio#97 모양 — 계획서 하나에 PR 이 여럿이라 Work ref 가 다른 PR 의 (지워진) 워크트리 · 줄은 "검증 대기 — 워크트리 HEAD 다름 · 2/2".
 # PR 브랜치(feat/x)를 체크아웃한 워크트리를 레포 워크트리 목록에서 찾아 base 합침으로 본다
 GONEF="plans/task/20261025-web-fe-gone.md"
-sed -e "s|^- Work ref: [^ ]*|- Work ref: $TMP/gone-wt|" -e "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 워크트리 HEAD 가 PR HEAD(${SHA2:0:7})와 다름 · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" > "$CORE/$GONEF"
+sed -e "s|^- Work ref: [^ ]*|- Work ref: $TMP/gone-wt|" -e "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 워크트리 HEAD 가 PR HEAD(${SHA2:0:7})와 다름 · 라운드 2/2 · 2026-10-26 10:00|" "$CORE/$PLANF" > "$CORE/$GONEF"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$GONEF" --pr web#7 --dry-run 2>&1)"
-expect "Work ref 가 지워진 다른 워크트리여도 PR 브랜치 워크트리로 base 합침(#97 — 라운드 3/3 · 멈춤 아님)" 'echo "$OUT" | grep -q "라운드 3/3 · base 합침" && echo "$OUT" | grep -q "PR 브랜치 feat/x 의 워크트리 $WT" && ! echo "$OUT" | grep -q "멈춤"' "$OUT"
+expect "Work ref 가 지워진 다른 워크트리여도 PR 브랜치 워크트리로 base 합침(#97 — 라운드 2 그대로 · 멈춤 아님)" 'echo "$OUT" | grep -q "라운드 2/1 · ⚡ 빠른 길 · base 합침" && echo "$OUT" | grep -q "PR 브랜치 feat/x 의 워크트리 $WT" && ! echo "$OUT" | grep -q "멈춤"' "$OUT"
 rm -f "$CORE/$GONEF"
 sed -i.bak "s|^- Auto review: web#7 @[0-9a-f]* |- Auto review: web#7 @${SHA:0:7} |" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "첫 부모가 지난번 본 HEAD 가 아니면 base 합침 아님 — 평소처럼 라운드 4/3(멈춤)" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+expect "첫 부모가 지난번 본 HEAD 가 아니면 base 합침 아님 — 평소처럼 라운드 3(멈춤)" 'echo "$OUT" | grep -q "라운드 3/1" && echo "$OUT" | grep -q "할 일: 멈춤" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
 # 충돌 풀기 밖의 수정을 섞은 merge 커밋은 base 합침이 아니다(내용 검사 — PR #22 라운드 1) — dev 에 새 커밋 → --merge-base(충돌 없음) → b.txt 도 고쳐 같이 커밋
 echo dev2 > "$TMP/dev-side/d.txt" && G -C "$TMP/dev-side" add d.txt && G -C "$TMP/dev-side" commit -q -m dev2 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
 OUT="$(merge_base)"
@@ -776,9 +752,9 @@ OUT="$OUT
 $(commit b.txt)"; CODE=$?
 MIXED="$(git -C "$WT" rev-parse HEAD)"
 expect "(시험 준비) 다른 수정을 섞은 merge 커밋" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse -q --verify HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ]' "$OUT"
-sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${MERGE_COMMIT:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
+sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${MERGE_COMMIT:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 2/2 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "충돌 풀기 밖의 수정(b.txt)이 섞이면 base 합침 아님 — 평소처럼 라운드 4/3" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+expect "충돌 풀기 밖의 수정(b.txt)이 섞이면 base 합침 아님 — 평소처럼 라운드 3(멈춤)" 'echo "$OUT" | grep -q "라운드 3/1" && echo "$OUT" | grep -q "할 일: 멈춤" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
 # 큰 diff(syung#23) — 생성물은 빼고 · 코드 파일이 넘치면 승인이어도 "잘린 diff 승인" 으로 머지하지 않음(--dry-run 으로 할 일만)
 node -e '
 const line = (path, body) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1,2 @@\n${body}\n`
@@ -787,13 +763,14 @@ require("fs").writeFileSync(process.argv[1], line("data/fare/bus_km.json", `+{${
 require("fs").writeFileSync(process.argv[2], line("data/fare/bus_km.json", `+{${"\"1\":2,".repeat(300000)}}`) + line("src/fare.mjs", "+export const fare = 1"))
 require("fs").writeFileSync(process.argv[3], line("src/huge.mjs", Array.from({ length: 1300 }, (_, index) => `+const v${index} = ${index} // ${"x".repeat(40)}`).join("\n")))
 ' "$TMP/big.diff" "$TMP/gen.diff" "$TMP/huge.diff"
-cp "$CORE/$PLANF" "$TMP/plan.keep"; write_plan '수정 필요' p3
+# 2026-11-25 — 리뷰 켠 PR 은 늘 빠른 길이라 2라운드는 1차 수정 지시(2차 줄) 뒤에만 돈다(짧은 리뷰도 같은 diff 길)
+cp "$CORE/$PLANF" "$TMP/plan.keep"; write_plan '수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지)' p3
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 2조각으로 나눠 다 보고 평소 승인 길(잘린 diff 멈춤 없음 · #267)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "2조각으로 나눠 리뷰" && echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 2조각으로 나눠 다 보고 평소 승인 길(잘린 diff 멈춤 없음 · #267)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "2조각으로 나눠 리뷰" && echo "$OUT" | grep -q "할 일: 2차 짧은 리뷰 승인 → 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/huge.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "파일 하나가 한 조각보다 크면 나눠도 못 봄 — 승인이어도 머지하지 않음(잘린 diff 승인 · 사람에게)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)" && echo "$OUT" | grep -q "다 넣지 못했다" && ! echo "$OUT" | grep -q "조각으로 나눠"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "큰 생성물 + 작은 코드 — 생성물만 빼고 다 넣었으면 평소 승인 길(머지 확인 요청)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다" && echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+expect "큰 생성물 + 작은 코드 — 생성물만 빼고 다 넣었으면 평소 승인 길(머지 확인 요청)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다" && echo "$OUT" | grep -q "할 일: 2차 짧은 리뷰 승인 → 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
 # PR 이 스스로 .gitattributes 에 "src/** linguist-generated" 를 더해도 판별은 base(origin/dev) 쪽 — src 코드는 그대로 리뷰(PR #62 자동 리뷰 지적 1)
 ATTR_BLOB="$(printf 'src/** linguist-generated\n' | git -C "$WT" hash-object -w --stdin)"
 ATTR_TREE="$(printf '100644 blob %s\t.gitattributes\n' "$ATTR_BLOB" | git -C "$WT" mktree)"
@@ -803,7 +780,7 @@ expect "PR HEAD 의 .gitattributes 는 쓰지 않음 — src/fare.mjs 는 생성
 # 지난 라운드가 코드 파일을 다 못 봤으면(history missed) 2라운드는 증분이 아니라 PR 전체 diff 를 다시(지적 2) — 다시 넣어도 넘치면 또 잘린 승인
 mkdir -p "$QUEUE/history"; printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":["src/b.mjs"]}' "$SHA" > "$QUEUE/history/web-7.json"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "지난 라운드 못 본 파일 있음 → 2라운드는 PR 전체 diff(증분 아님) · 프롬프트에 그렇게" 'grep -q "지난 리뷰가 diff 일부만 봐서 전체를 다시 넣었다" "$TMP/prompt.txt" && grep -q "export const fare" "$TMP/prompt.txt" && echo "$OUT" | grep -q "라운드 2/3"' "$OUT"
+expect "지난 라운드 못 본 파일 있음 → 2라운드는 PR 전체 diff(증분 아님) · 프롬프트에 그렇게" 'grep -q "지난 리뷰가 diff 일부만 봐서 전체를 다시 넣었다" "$TMP/prompt.txt" && grep -q "export const fare" "$TMP/prompt.txt" && echo "$OUT" | grep -q "라운드 2/"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/huge.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "전체를 다시 넣어도 넘치면 2라운드 승인도 잘린 diff 승인(머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인"' "$OUT"
 printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":[]}' "$SHA" > "$QUEUE/history/web-7.json"
@@ -819,7 +796,7 @@ require("fs").writeFileSync(process.argv[2], line("web/index.html", "+<script>co
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/code-long.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "코드 긴 줄을 줄인 PR — 승인이어도 잘린 diff 승인(못 본 코드 파일 1개 · 머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/data-long.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "데이터 모양 긴 줄만 줄인 PR(syung#12) — 평소 승인 길" 'echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+expect "데이터 모양 긴 줄만 줄인 PR(syung#12) — 평소 승인 길" 'echo "$OUT" | grep -q "할 일: 2차 짧은 리뷰 승인 → 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
 cp "$TMP/plan.keep" "$CORE/$PLANF"   # 뒤 시험은 앞의 계획서 줄(충돌 검증 대기)을 그대로 쓴다
 # merge 커밋은 스테이징 전체를 검사한다(지정 파일만이 아니라) — 충돌 표시가 남은 파일을 미리 스테이징하고 인자에서 빼도 거부
 echo dev3 > "$TMP/dev-side/b.txt" && G -C "$TMP/dev-side" add b.txt && G -C "$TMP/dev-side" commit -q -m dev3 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
@@ -929,8 +906,6 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
   rm -rf "$CORE/.requests" "$CORE/.events.jsonl" "$TMP/queue-confirm" "$GH_LOG.views" "$CORE/plans/task/"*; : > "$GH_LOG"
   # WATCHER_HELD=1 — 처리기가 이미 도는 것처럼(미룬 알림이 진짜 처리기를 띄우지 않게)
   [ "${WATCHER_HELD:-0}" = 1 ] && mkdir -p "$TMP/queue-confirm/.watcher.lock" && echo $$ > "$TMP/queue-confirm/.watcher.lock/pid"
-  # 2026-11-08 — 빠른 길이 모든 PR 기본(#267). 빠른 길 시험(계획서 Fast path 줄 · fastPath 를 직접 준 것)이 아니면 옛 흐름(상한 3) 시험으로 남긴다
-  case "$extra${EXTRA_PLAN:-}${AUTO_LINE:-}" in *fastPath*|*'Fast path: yes'*|*'빠른 길'*) ;; *) extra="$extra, \"fastPath\": false" ;; esac
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true%s } ] }\n' "$extra" > "$CORE/athena.config.json"
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n%s' "$WT" "${AUTO_LINE:+$AUTO_LINE
 }" "${EXTRA_PLAN:-}" > "$CORE/plans/task/x.md"
@@ -1004,7 +979,7 @@ env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="
 if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 base 가 바뀜(dev → main)' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] && grep -lq '"state": *"cancelled"' "$CORE/.requests"/*/request.json "$CORE/.requests"/*.json 2>/dev/null; then echo "  ✔ 확인 대기 중 base 변경 → 머지 안 함 · 요청 닫음 · 줄에 이유"; else echo "  ✖ 확인 대기 중 base 변경"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; ls -R "$CORE/.requests" | head; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
 # 확인 없는 머지도 같다
 rm -rf "$TMP/queue-confirm"; mkdir -p "$TMP/queue-confirm/confirm"; : > "$GH_LOG"; rm -f "$GH_LOG.views"
-printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false, "fastPath": false } ] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
 printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":1,"worktree":"%s","base":"dev","root":"%s","packId":null,"request":null,"noConfirm":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json"
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
   const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
@@ -1061,7 +1036,7 @@ grep -q '^delegate security-reviewer --cwd .* --beside p91 --plan plans/task/x.m
 WT_KEEP="$WT" SHA_KEEP="$SHA"; WT="$WT_RISKY" SHA="$SHA_RISKY"   # 아래 멈춘 HEAD 묶음은 위험한 수정 워크트리로
 STOP_LINE="- Auto review: web#7 @${SHA:0:7} · 보안 검토 때문에 멈춤 — 승인 1/1이지만 보안 검토 못 함 — x · 라운드 1/3 · $(date '+%Y-%m-%d') 00:00"
 : > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 0 · 중간 1 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 가짜
-" merge_case "보안 — 멈춘 HEAD 에 결과 높음 0 → 리뷰 없이 같은 라운드에서 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main.*라운드 1/3' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+" merge_case "보안 — 멈춘 HEAD 에 결과 높음 0 → 리뷰 없이 같은 라운드에서 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main.*라운드 1/2' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
 grep -q '머지 단계를 이어 간다' "$TMP/merge.out" && ! grep -q '리뷰어 구성\|↪ 리뷰어' "$TMP/merge.out" && [ ! -s "$PDLOG" ] && echo "  ✔ 리뷰를 다시 돌리지 않고 이어 갔다 · security-reviewer 도 다시 안 띄움" || { echo "  ✖ 이어 가기 — $(cat "$PDLOG")"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 : > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 1 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 가짜
 " merge_case "보안 — 멈춘 HEAD 결과가 높음 1 → 이어 가지 않음(고친 커밋을 기다린다)" ', "autoMergeConfirm": false' no '보안 검토 때문에 멈춤' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
@@ -1227,28 +1202,28 @@ echo; echo "앞 리뷰 승인 이어받기"
 TREE="$(git -C "$WT" rev-parse 'HEAD^{tree}')"
 CLAUDE_LOG="$TMP/claude-called"; CODEX_CALLED4="$TMP/codex-called-4"; rm -f "$CLAUDE_LOG" "$CODEX_CALLED4"
 EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web · 🌿 feat/x · 🧠 codex · 2026-10-26 10:00
-" merge_case "같은 tree 로 Codex 승인 → Codex 안 부름 · 줄에 '앞 리뷰 승인 이어받음'" ', "autoMergeConfirm": false' yes "머지됨 — squash → main · 리뷰어 codex 하나 · Codex: 앞 리뷰 승인 이어받음 @${SHA:0:7}" FAKE_CLAUDE_ARGS="$CLAUDE_LOG" FAKE_CODEX_CALLED="$CODEX_CALLED4"
+" merge_case "같은 tree 로 Codex 승인 → Codex 안 부름 · 줄에 '앞 리뷰 승인 이어받음'" ', "autoMergeConfirm": false' yes "머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · Codex: 앞 리뷰 승인 이어받음 @${SHA:0:7}" FAKE_CLAUDE_ARGS="$CLAUDE_LOG" FAKE_CODEX_CALLED="$CODEX_CALLED4"
 [ ! -e "$CODEX_CALLED4" ] && [ ! -s "$CLAUDE_LOG" ] && grep -q '"reviewers":"codex:inherited"' "$CORE/.events.jsonl" \
   && echo "  ✔ Codex · Claude 둘 다 안 불림 · 사건 기록 codex:inherited" || { echo "  ✖ 이어받기 자리"; grep -o '"reviewers":"[^"]*"' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
 grep -q "^pr review 7 " "$GH_LOG" && grep -q "앞 리뷰 승인 이어받음" "$GH_LOG" && echo "  ✔ PR 댓글에 이어받음" || { echo "  ✖ PR 댓글에 이어받음이 없다"; FAIL=1; }
 # #4 — 다른 엔진(claude) 승인은 리뷰어(codex) 몫으로 쓰지 않는다(PR 239 재현: 엔진이 다른 승인이 자리를 채웠다)
 rm -f "$CLAUDE_LOG" "$CODEX_CALLED4"
 EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web · 🌿 feat/x · 🧠 claude · 2026-10-26 10:00
-" merge_case "#4 Claude 승인 → 리뷰어 codex 가 리뷰 · 이어받지 않음" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · 리뷰어 codex 하나 · 라운드' FAKE_CLAUDE_ARGS="$CLAUDE_LOG" FAKE_CODEX_CALLED="$CODEX_CALLED4"
+" merge_case "#4 Claude 승인 → 리뷰어 codex 가 리뷰 · 이어받지 않음" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드' FAKE_CLAUDE_ARGS="$CLAUDE_LOG" FAKE_CODEX_CALLED="$CODEX_CALLED4"
 [ -e "$CODEX_CALLED4" ] && [ ! -s "$CLAUDE_LOG" ] && grep -q '"reviewers":"codex:approve"' "$CORE/.events.jsonl" && ! grep -q "앞 리뷰 승인 이어받음" "$CORE/plans/task/x.md" \
   && echo "  ✔ #4 Codex 는 불리고 Claude 는 안 불림 · 사건 기록 codex:approve" || { echo "  ✖ #4 다른 엔진 승인"; grep -o '"reviewers":"[^"]*"' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
 rm -f "$CODEX_CALLED4"
 EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web · 🌿 feat/x · 2026-10-26 10:00
-" merge_case "#4 엔진 없는 옛 승인 → 이어받지 않고 리뷰" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · 리뷰어 codex 하나 · 라운드' FAKE_CODEX_CALLED="$CODEX_CALLED4"
+" merge_case "#4 엔진 없는 옛 승인 → 이어받지 않고 리뷰" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드' FAKE_CODEX_CALLED="$CODEX_CALLED4"
 [ -e "$CODEX_CALLED4" ] && ! grep -q "앞 리뷰 승인 이어받음" "$CORE/plans/task/x.md" && echo "  ✔ #4 엔진 없는 옛 승인은 이어받지 않음" || { echo "  ✖ #4 엔진 없는 옛 승인을 이어받았다"; FAIL=1; }
 # #3 처리기 한 번 — 주 도구 codex 라 리뷰어가 claude 인데 사용량 한도면 사람 손 없이 codex 하나로 이어 가 머지(고치기 전: 리뷰어 부족 → auto.stop · PR 235~240)
 printf '{"main":"codex"}\n' > "$CORE/.athena-main-tool.json"
-EXTRA_PLAN='' merge_case "#3 Claude 한도 → codex 하나로 머지 · 줄에 사용량 한도" ', "autoMergeConfirm": false' yes "머지됨 — squash → main · 리뷰어 codex 하나 — Claude 사용량 한도" FAKE_CLAUDE=limit FAKE_CODEX=ok
+EXTRA_PLAN='' merge_case "#3 Claude 한도 → codex 하나로 머지 · 줄에 사용량 한도" ', "autoMergeConfirm": false' yes "머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 — Claude 사용량 한도" FAKE_CLAUDE=limit FAKE_CODEX=ok
 ! grep -q '"type":"auto.stop"' "$CORE/.events.jsonl" && grep -q '"reviewers":"codex:approve"' "$CORE/.events.jsonl" \
   && echo "  ✔ #3 멈춤 없음 · 사건 기록 codex:approve" || { echo "  ✖ #3 처리기 한도 전환"; grep -o '"type":"[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
 rm -f "$CORE/.athena-main-tool.json" "$CODEX_CALLED4"
 EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree 0000ffff0000 · 📦 web · 🌿 feat/x · 🧠 codex · 2026-10-26 10:00
-" merge_case "tree 가 다르면 → Codex 도 다시 리뷰" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · 리뷰어 codex 하나 · 라운드' FAKE_CODEX_CALLED="$CODEX_CALLED4"
+" merge_case "tree 가 다르면 → Codex 도 다시 리뷰" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드' FAKE_CODEX_CALLED="$CODEX_CALLED4"
 [ -e "$CODEX_CALLED4" ] && echo "  ✔ Codex 리뷰어가 불렸다" || { echo "  ✖ tree 가 다른데 Codex 가 안 불렸다"; FAIL=1; }
 echo; echo "사람에게 넘기지 않기(결정 A · B · C)"
 OLD7="0000000"
@@ -1256,48 +1231,48 @@ CALLED="$TMP/codex-called"; rm -f "$CALLED"
 # C 절은 주 도구 codex — 리뷰어 claude 하나(가짜 claude 판정으로 본다 · codex 는 불리지 않는다) · B 앞에서 지운다
 printf '{"main":"codex"}\n' > "$CORE/.athena-main-tool.json"
 rm -f "$CLAUDE_LOG"
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" \
-  merge_case "C — 상한 뒤 이어받은 새 HEAD → 짧은 리뷰 승인 → 바로 머지(확인 없음 레포)" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(상한 뒤 이어받음 — 바뀐 부분 짧은 리뷰 후 머지\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/3" FAKE_CODEX_CALLED="$CALLED" FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
-[ ! -e "$CALLED" ] && [ -s "$CLAUDE_LOG" ] && grep -q "^pr review 7 .*상한 뒤 이어받음 · 짧은 리뷰 · 라운드 4/3" "$GH_LOG" && grep -q '"type":"auto.takeover".*"review":"승인"' "$CORE/.events.jsonl" && grep '"type":"review"' "$CORE/.events.jsonl" | grep -q '"short":true' \
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" \
+  merge_case "C — 상한 뒤 이어받은 새 HEAD → 짧은 리뷰 승인 → 바로 머지(확인 없음 레포)" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(⚡ 빠른 길 · 2차 — 바뀐 부분 짧은 리뷰 후 머지\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 2/2" FAKE_CODEX_CALLED="$CALLED" FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
+[ ! -e "$CALLED" ] && [ -s "$CLAUDE_LOG" ] && grep -q "^pr review 7 .*⚡ 빠른 길 · 2차 · 짧은 리뷰 · 라운드 2/2" "$GH_LOG" && grep -q '"type":"auto.takeover".*"review":"승인"' "$CORE/.events.jsonl" && grep '"type":"review"' "$CORE/.events.jsonl" | grep -q '"short":true' \
   && echo "  ✔ C — 리뷰어는 Claude 하나만 · PR 댓글에 짧은 리뷰 · auto.takeover(승인) · review 사건 short:true" || { echo "  ✖ C — 짧은 리뷰 리뷰어 · 댓글 · 사건"; grep -o '"type":"[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" \
-  merge_case "C — 짧은 리뷰에 막는 지적 → 머지 안 함 · 멈춤(다시 고치게 하지 않음)" ', "autoMergeConfirm": false' no '멈춤 — 상한 뒤 이어받음 짧은 리뷰에서 막는 지적 1개 · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/3' FAKE_CLAUDE=changes FAKE_CODEX_CALLED="$CALLED"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" \
+  merge_case "C — 짧은 리뷰에 막는 지적 → 머지 안 함 · 멈춤(다시 고치게 하지 않음)" ', "autoMergeConfirm": false' no '멈춤 — 2차 짧은 리뷰에서 막는 지적 1개 · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 2/2' FAKE_CLAUDE=changes FAKE_CODEX_CALLED="$CALLED"
 [ ! -e "$CALLED" ] && grep -q '"type":"auto.stop".*"reason":"short-review"' "$CORE/.events.jsonl" && grep -q '"type":"auto.takeover".*"review":"막음"' "$CORE/.events.jsonl" && ! grep -q "수정 지시를 보낼 pane" "$CORE/.requests"/*.json 2>/dev/null && grep -q "짧은 리뷰 막음" "$TMP/merge.out" "$CORE/.requests"/*.json 2>/dev/null \
   && echo "  ✔ C — 짧은 리뷰 막음: auto.stop(short-review) · 수정 지시 없음 · 아테나에 알림" || { echo "  ✖ C — 짧은 리뷰 막음 처리"; grep -o '"type":"[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 멈춤 — 상한 뒤 이어받음 짧은 리뷰에서 막는 지적 1개 · 라운드 4/3 · 2026-10-26 10:00" \
   merge_case "C — 짧은 리뷰 멈춤 뒤 또 커밋 → 자동 흐름이 다시 돌지 않음(사람이 이어받음)" ', "autoMergeConfirm": false' no '멈춤 — 상한 뒤 이어받음 짧은 리뷰에서 막는 지적 1개' FAKE_CODEX_CALLED="$CALLED"
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" \
-  merge_case "C — 짧은 리뷰어가 답하지 못함 → 머지 안 함 · 멈춤" ', "autoMergeConfirm": false' no '멈춤 — 상한 뒤 이어받음 짧은 리뷰 실패\(리뷰어가 답하지 못함\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/3' FAKE_CLAUDE=bad FAKE_CODEX_CALLED="$CALLED"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" \
+  merge_case "C — 짧은 리뷰어가 답하지 못함 → 머지 안 함 · 멈춤" ', "autoMergeConfirm": false' no '멈춤 — 2차 짧은 리뷰 실패\(리뷰어가 답하지 못함\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 2/2' FAKE_CLAUDE=bad FAKE_CODEX_CALLED="$CALLED"
 [ ! -e "$CALLED" ] && grep -q '"type":"auto.stop".*"reason":"reviewers"' "$CORE/.events.jsonl" && grep -q '"type":"auto.takeover".*"review":"실패"' "$CORE/.events.jsonl" \
   && echo "  ✔ C — 짧은 리뷰 실패: auto.stop(reviewers) · auto.takeover(실패)" || { echo "  ✖ C — 짧은 리뷰 실패 처리"; grep -o '"type":"[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
 # --dry-run — 짧은 리뷰도 할 일만 보여 준다(PR 댓글 · 계획서 줄 · 머지 없음)
-SHORT_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00"
+SHORT_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00"
 for verdict in approve changes; do
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "$SHORT_LINE" > "$CORE/plans/task/x.md"; : > "$GH_LOG"
   OUT="$(env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok FAKE_CLAUDE="$verdict" GH_LOG="$GH_LOG" "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 --dry-run 2>&1)"
-  if [ "$verdict" = approve ]; then want="── 할 일: 상한 뒤 이어받음 짧은 리뷰 승인 → 안 정한 결정"; else want="── 할 일: 머지하지 않음 — 멈춤 — 상한 뒤 이어받음 짧은 리뷰에서 막는 지적 1개"; fi
-  if echo "$OUT" | grep -qF -- "$want" && echo "$OUT" | grep -q "상한 뒤 이어받음 · 짧은 리뷰 · 라운드 4/3" && grep -qF -- "$SHORT_LINE" "$CORE/plans/task/x.md" && ! grep -q "^pr review\|^pr merge" "$GH_LOG"; then
+  if [ "$verdict" = approve ]; then want="── 할 일: 2차 짧은 리뷰 승인 → 안 정한 결정"; else want="── 할 일: 머지하지 않음 — 멈춤 — 2차 짧은 리뷰에서 막는 지적 1개"; fi
+  if echo "$OUT" | grep -qF -- "$want" && echo "$OUT" | grep -q "⚡ 빠른 길 · 2차 · 짧은 리뷰 · 라운드 2/2" && grep -qF -- "$SHORT_LINE" "$CORE/plans/task/x.md" && ! grep -q "^pr review\|^pr merge" "$GH_LOG"; then
     echo "  ✔ C — --dry-run 짧은 리뷰($verdict): 할 일 · 댓글 머리만 · 계획서 · PR 그대로"
   else echo "  ✖ C — --dry-run 짧은 리뷰($verdict)"; echo "$OUT" | sed 's/^/      /'; FAIL=1; fi
 done
 # 옛 문구로 남은 상한 줄도 이어받는다(머리만 본다)
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 3/3 · 2026-10-26 10:00" \
-  merge_case "C — 옛 상한 줄(리뷰 없이 검증만)도 이어받아 짧은 리뷰 → 머지" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(상한 뒤 이어받음 — 바뀐 부분 짧은 리뷰 후 머지\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/3"
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" \
-  merge_case "C — 이어받은 HEAD · 확인 켠 레포 → 짧은 리뷰 승인 뒤 머지 확인 요청(autoMergeConfirm 그대로)" '' no '상한 뒤 이어받음\(바뀐 부분 짧은 리뷰 후 머지\) → 머지 확인 대기'
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 1/1 · 2026-10-26 10:00" \
+  merge_case "C — 옛 상한 줄(리뷰 없이 검증만)도 이어받아 짧은 리뷰 → 머지" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(⚡ 빠른 길 · 2차 — 바뀐 부분 짧은 리뷰 후 머지\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 2/2"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" \
+  merge_case "C — 이어받은 HEAD · 확인 켠 레포 → 짧은 리뷰 승인 뒤 머지 확인 요청(autoMergeConfirm 그대로)" '' no '2차\(바뀐 부분 짧은 리뷰 후 머지\) → 머지 확인 대기'
 grep -q "\"shortReviewed\":\"$SHA\"" "$TMP/queue-confirm/confirm/web-7.json" 2>/dev/null \
   && echo "  ✔ C — 머지 대기 파일에 그 HEAD 의 짧은 리뷰 표식(shortReviewed)" || { echo "  ✖ C — 대기 파일에 짧은 리뷰 표식이 없다"; cat "$TMP/queue-confirm/confirm/web-7.json" 2>/dev/null; FAIL=1; }
 # 짧은 리뷰는 같은 tree 의 앞 리뷰 승인(- Review result:)도 이어받지 않는다 — 상한 라운드 지적을 리뷰어가 실제로 다시 본다(2026-11-03 리뷰 지적)
 rm -f "$CLAUDE_LOG"
 EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web · 🌿 feat/x · 🧠 claude · 2026-10-26 10:00
-" AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" merge_case "C — 짧은 리뷰는 같은 tree 앞 승인이 있어도 Claude 가 본다(승인 → 머지)" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(상한 뒤 이어받음 — 바뀐 부분 짧은 리뷰 후 머지\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/3 · [0-9]" FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
+" AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" merge_case "C — 짧은 리뷰는 같은 tree 앞 승인이 있어도 Claude 가 본다(승인 → 머지)" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(⚡ 빠른 길 · 2차 — 바뀐 부분 짧은 리뷰 후 머지\) · 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 2/2 · [0-9]" FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
 [ -s "$CLAUDE_LOG" ] && ! grep -q "앞 리뷰 승인 이어받음" "$CORE/plans/task/x.md" && echo "  ✔ C — 짧은 리뷰에서 Claude 가 불렸다 · 이어받음 없음" || { echo "  ✖ C — 짧은 리뷰가 앞 승인을 이어받았다"; FAIL=1; }
 EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web · 🌿 feat/x · 🧠 claude · 2026-10-26 10:00
-" AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" merge_case "C — 짧은 리뷰는 같은 tree 앞 승인이 있어도 막는 지적이면 멈춤" ', "autoMergeConfirm": false' no '멈춤 — 상한 뒤 이어받음 짧은 리뷰에서 막는 지적 1개' FAKE_CLAUDE=changes
+" AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" merge_case "C — 짧은 리뷰는 같은 tree 앞 승인이 있어도 막는 지적이면 멈춤" ', "autoMergeConfirm": false' no '멈춤 — 2차 짧은 리뷰에서 막는 지적 1개' FAKE_CLAUDE=changes
 # 업데이트 전에 생긴 이어받음 머지 대기(짧은 리뷰 표식 없음)는 머지하지 않는다 — 지난 리뷰 기록이 맞으면 상한 줄을 되살려 짧은 리뷰로 돌리고, 아니면 멈춤(2026-11-03 리뷰 지적)
 legacy_job() {   # <지난 리뷰 기록 yes|no>
   rm -rf "$TMP/queue-confirm" "$CORE/.events.jsonl" "$CORE/.requests"; mkdir -p "$TMP/queue-confirm/confirm" "$TMP/queue-confirm/history" "$TMP/queue-confirm/.watcher.lock"; echo $$ > "$TMP/queue-confirm/.watcher.lock/pid"; : > "$GH_LOG"; rm -f "$GH_LOG.views"
-  printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false, "fastPath": false } ] }\n' > "$CORE/athena.config.json"
+  printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @%s · 상한 뒤 이어받음(리뷰 없이 검증만) → 바로 머지(확인 없음) · 라운드 4/3 · 2026-10-26 10:00\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "${SHA:0:7}" > "$CORE/plans/task/x.md"
   [ "$1" = yes ] && printf '{"sha":"%s","round":3,"findings":[{"file":"b.js","line":2,"problem":"p","fix":"f"}],"autoDecisions":[],"missed":[]}' "${OLD7}aaaa" > "$TMP/queue-confirm/history/web-7.json"
   printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":4,"max":3,"note":"","takeover":true,"worktree":"%s","base":"main","root":"%s","packId":null,"request":null,"noConfirm":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json"
@@ -1311,7 +1286,7 @@ if ! grep -q '^pr merge' "$GH_LOG" && grep -q "^- Auto review: web#7 @$OLD7 · �
 else echo "  ✖ C — 옛 이어받음 대기 → 짧은 리뷰로"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; ls "$TMP/queue-confirm"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
 rm -f "$CLAUDE_LOG"
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" FAKE_CLAUDE_ARGS="$CLAUDE_LOG" "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
-if grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && [ -s "$CLAUDE_LOG" ] && grep -q "· 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/3" "$CORE/plans/task/x.md"; then echo "  ✔ C — 되살린 상한 줄로 다시 돌면 짧은 리뷰(Claude) 승인 뒤 머지"
+if grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && [ -s "$CLAUDE_LOG" ] && grep -q "· 짧은 리뷰 — 리뷰어 claude 하나 · 라운드 4/2" "$CORE/plans/task/x.md"; then echo "  ✔ C — 되살린 상한 줄로 다시 돌면 짧은 리뷰(Claude) 승인 뒤 머지"
 else echo "  ✖ C — 되살린 뒤 짧은 리뷰 · 머지"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
 legacy_job no
 if ! grep -q '^pr merge' "$GH_LOG" && grep -q "^- Auto review: web#7 @${SHA:0:7} · 멈춤 — 상한 뒤 이어받음 짧은 리뷰 없음" "$CORE/plans/task/x.md" && grep -q '"type":"auto.stop".*"reason":"short-review"' "$CORE/.events.jsonl" \
@@ -1380,22 +1355,20 @@ for history in yes no; do
   else echo "  ✖ C — 전환 중 실패 후 재시작(기록 $history)"; cat "$TMP/merge.out"; FAIL=1; fi
 done
 rm -rf "$TMP/queue-confirm"
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" \
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 2차(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2 · 2026-10-26 10:00" \
   merge_case "C — 이어받은 HEAD 가 검증 실패 → 머지 안 함 · 사람에게(자동 재시도 없음)" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 리뷰어 부족(승인 1/2) · 라운드 3/3 · 2026-10-26 10:00" \
   merge_case "C — 상한을 넘었는데 직전이 이어받기가 아님 → 멈춤(짧은 리뷰도 안 돎)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한'
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026-10-26 10:00" \
-  merge_case "C — 상한 라운드(3/3)에서 수정 필요 → 멈추지 않고 수정 지시 · 줄에 이어받음" ', "autoMergeConfirm": false' no '^- Auto review: web#7 @[0-9a-f]+ · 수정 필요 — 상한 뒤 이어받음' FAKE_CLAUDE=changes
+merge_case "C — 상한 라운드(1차)에서 수정 필요 → 멈추지 않고 수정 지시 · 줄에 2차" ', "autoMergeConfirm": false' no '^- Auto review: web#7 @[0-9a-f]+ · 수정 필요 — 2차' FAKE_CLAUDE=changes
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 상한 뒤 이어받음(바뀐 부분 짧은 리뷰 후 머지) → 머지 확인 대기 · 라운드 4/3 · 2026-10-26 10:00" \
   merge_case "C — 이어받은 HEAD 가 머지 단계로 간 뒤 또 커밋 → 멈춤(다시 이어받지 않음)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한' FAKE_CODEX_CALLED="$CALLED"
-AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026-10-26 10:00" \
-  merge_case "C — 상한 라운드에 리뷰어가 실패 → 리뷰어 부족 · 이어받지 않음" ', "autoMergeConfirm": false' no '· 리뷰어 부족\(승인 0/1\) · 리뷰어 claude 하나 · 라운드 3/3' FAKE_CLAUDE=bad
-! grep -q '상한 뒤 이어받음' "$CORE/plans/task/x.md" && echo "  ✔ C — 리뷰어 부족 상한 라운드는 이어받기를 주지 않음" || { echo "  ✖ C — 리뷰어 부족인데 이어받음"; FAIL=1; }
+merge_case "C — 상한 라운드(1차)에 리뷰어가 실패 → 리뷰어 부족 · 이어받지 않음" ', "autoMergeConfirm": false' no '· 리뷰어 부족\(승인 0/1\) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2' FAKE_CLAUDE=bad
+! grep -q -- '— 2차' "$CORE/plans/task/x.md" && echo "  ✔ C — 리뷰어 부족 상한 라운드는 이어받기를 주지 않음" || { echo "  ✖ C — 리뷰어 부족인데 이어받음"; FAIL=1; }
 rm -f "$CORE/.athena-main-tool.json"   # B · A · D 는 기록 없음 — 리뷰어 codex 하나(가짜 codex 결정 응답으로 본다)
-merge_case "B — 구현 세부 결정 + 추천 → 자동 확정 · 수정 필요(결정 콘솔 없음)" ', "autoMergeConfirm": false' no '· 수정 필요 · 리뷰어 codex 하나 · 라운드 1/3' FAKE_CODEX=impl
+merge_case "B — 구현 세부 결정 + 추천 → 자동 확정 · 수정 필요(결정 콘솔 없음)" ', "autoMergeConfirm": false' no '· 수정 필요 — 2차\(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지\) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2' FAKE_CODEX=impl
 grep -q '^- 추천안으로 자동 확정(자동 리뷰 · codex · web#7 @.* · 구현 세부): 아이콘 자리 → A 왼쪽$' "$CORE/plans/task/x.md" && [ ! -e "$CORE/plans/task/x.html" ] && grep -q "추천안으로 자동 확정" "$GH_LOG" \
   && echo "  ✔ B — 계획서 Decisions · PR 댓글에 추천안으로 자동 확정" || { echo "  ✖ B — 계획서 · 댓글 기록"; sed 's/^/      /' "$CORE/plans/task/x.md"; FAIL=1; }
-merge_case "A — 제품 결정 + 수정 지적 → 결정 필요 · 수정 지시도 만듦" ', "autoMergeConfirm": false' no '· 결정 필요 · 리뷰어 codex 하나 · 라운드 1/3' FAKE_CODEX=product-changes
+merge_case "A — 제품 결정 + 수정 지적 → 결정 필요 · 수정 지시도 만듦" ', "autoMergeConfirm": false' no '· 결정 필요 — 2차\(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지\) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2' FAKE_CODEX=product-changes
 grep -q '"title": "자동 리뷰 수정 지시를 보낼 pane 이 없다' "$CORE/.requests"/*.json 2>/dev/null && grep -q 'b.js:2' "$CORE/.requests"/*.json \
   && echo "  ✔ A — 결정이 있어도 수정 지시(b.js:2)를 보냄(가짜 화면엔 pane 이 없어 사람 요청으로)" || { echo "  ✖ A — 수정 지시가 없다"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 # 가짜 본체엔 docs/plan-template.html 이 없어 plan-html --add 가 실패한다 — 그래도 결정 콘솔과 같은 키의 결정 요청이 열려 머지를 막는다
@@ -1403,15 +1376,14 @@ grep -l '"dedupeKey": "plan:plans/task/x.md"' "$CORE/.requests"/*.json 2>/dev/nu
   && echo "  ✔ A — 결정 콘솔 등록 실패 → 같은 키(plan:<계획서>)로 결정 요청을 대신 엶" || { echo "  ✖ A — 등록 실패 뒤 결정 요청이 없다"; FAIL=1; }
 (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
   const { writeFileSync } = await import('node:fs')
-  writeFileSync('plans/task/x.md', '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: $WT · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 · 라운드 1/3 · s\n- PR: https://github.com/acme/web/pull/7\n')")
+  writeFileSync('plans/task/x.md', '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: $WT · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 승인 1/1이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기 · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2 · s\n- PR: https://github.com/acme/web/pull/7\n')")
 : > "$GH_LOG"; rm -f "$GH_LOG.views"
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" \
   "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
-! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 승인 1/1이지만 결정 콘솔에 안 정한 결정' "$CORE/plans/task/x.md" \
+! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 이어받은 HEAD이지만 결정 콘솔에 안 정한 결정' "$CORE/plans/task/x.md" \
   && echo "  ✔ A — 그 요청이 남아 있으면 다음 라운드가 승인이어도 머지 안 함" || { echo "  ✖ A — 등록 실패 뒤 머지가 막히지 않음"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
-PENDING=1 merge_case "A — 승인이어도 결정 콘솔에 안 정한 결정 → 머지 안 함" ', "autoMergeConfirm": false' no '결정 필요 — 승인 1/1이지만 결정 콘솔에 안 정한 결정' FAKE_CODEX=ok
-PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 라운드 3/3 · 2026-10-26 10:00" \
-  merge_case "A · C — 이어받은 HEAD 도 안 정한 결정이 있으면 머지 안 함(다음 커밋도 이어받음)" ', "autoMergeConfirm": false' no '결정 필요 — 상한 뒤 이어받음.*머지 대기'
+PENDING=1 merge_case "A — 승인이어도 결정 콘솔에 안 정한 결정 → 머지 안 함" ', "autoMergeConfirm": false' no '결정 필요 — .*승인 1/1이지만 결정 콘솔에 안 정한 결정' FAKE_CODEX=ok
+# (옛 3라운드 흐름의 '이어받은 HEAD 도 결정이면 다음 커밋도 이어받음'은 리뷰 켠 PR 에선 안 돈다 — 빠른 길 절 '이어받은 HEAD 에 안 정한 결정' 이 본다)
 merge_case "E — 권장만 남은 수정 필요 → 승인으로 보고 머지 단계(바로 머지)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_CODEX=advisory
 grep -q "권장 1개는 머지를 막지 않는다" "$GH_LOG" && ! grep -q "수정 지시를 보낼 pane" "$CORE/.requests"/*.json 2>/dev/null \
   && echo "  ✔ E — 권장은 PR 댓글에만(에이전트 지시 없음)" || { echo "  ✖ E — 권장 처리"; FAIL=1; }
@@ -1420,8 +1392,9 @@ ADV_ISSUE="$(ls "$CORE"/issues/*-web-pr7-리뷰-권장.md 2>/dev/null | head -1)
   && echo "  ✔ E — 권장 지적은 PR 당 이슈 하나(issues/<날짜>-web-pr7-리뷰-권장.md)" || { echo "  ✖ E — 권장 묶음 이슈 없음"; ls "$CORE/issues" 2>&1 | sed 's/^/      /'; FAIL=1; }
 rm -f "$CORE"/issues/*-web-pr7-리뷰-권장.md
 
-echo; echo "⚡ 빠른 길(2026-10-31 D1 · D2 — 계획서 '- Fast path: yes' PR 은 상한 1 · 리뷰어는 평소와 같은 하나)"
-FAST_PLAN="- Fast path: yes (파일 3개)
+echo; echo "⚡ 빠른 길(2026-10-31 D1 · D2 — 리뷰 켠 PR 은 모두 상한 1 · 리뷰어는 평소와 같은 하나)"
+# 2026-11-25 — '- Fast path:' 줄은 더 읽지 않는다 · 옛 계획서에 no 가 남아 있어도 빠른 길 그대로
+FAST_PLAN="- Fast path: no (옛 줄 — 읽지 않음)
 "
 rm -f "$CALLED"
 # 빠른 길 절도 주 도구 codex — 리뷰어 claude 하나 · 절 끝에서 지운다
@@ -1452,11 +1425,12 @@ AUTO_LINE="- Auto review: web#7 @$OLD7 · 결정 필요 — 이어받은 HEAD이
 [ ! -e "$CALLED" ] && grep -q '"type":"auto.stop".*"fast":true' "$CORE/.events.jsonl" && grep -q '"reason":"rounds"' "$CORE/.events.jsonl" \
   && echo "  ✔ 빠른 길 — 결정 뒤 커밋은 리뷰도 머지도 하지 않음 · auto.stop(rounds)" || { echo "  ✖ 빠른 길 — 결정 뒤 커밋 멈춤"; grep -o '"type":"auto[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
 rm -f "$CALLED"
-EXTRA_PLAN="$FAST_PLAN" merge_case "fastPath: false 레포 — 계획서에 yes 가 있어도 옛 흐름(상한 3 · 라운드 1/3)" ', "autoMergeConfirm": false, "fastPath": false' yes '머지됨 — squash → main · 리뷰어 claude 하나 · 라운드 1/3' FAKE_CODEX_CALLED="$CALLED"
-[ ! -e "$CALLED" ] && ! grep -q '"fast":true' "$CORE/.events.jsonl" && echo "  ✔ fastPath: false — 리뷰어는 그대로 하나 · 사건에 fast 없음" || { echo "  ✖ fastPath: false — 리뷰어 · 사건"; FAIL=1; }
+# 2026-11-25 — 옛 키 fastPath: false 가 팩에 남아 있어도 알림 없이 무시(빠른 길 그대로)
+merge_case "옛 키 fastPath: false — 무시하고 빠른 길(최대 2번 · 라운드 1/2)" ', "autoMergeConfirm": false, "fastPath": false' yes '머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2' FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q '"type":"auto.merge".*"fast":true' "$CORE/.events.jsonl" && ! grep -qi 'fastPath' "$TMP/merge.out" && echo "  ✔ 옛 키 fastPath: false — 리뷰어는 그대로 하나 · 사건 fast:true · 알림 없음" || { echo "  ✖ 옛 키 fastPath: false — 리뷰어 · 사건 · 알림"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 rm -f "$CALLED"
-# 2026-11-08 #267 — 계획서에 Fast path 줄이 없어도 레포가 켜 두었으면(기본) 빠른 길(상한 1 — 리뷰는 PR 마다 최대 2번)
-merge_case "계획서에 Fast path 줄 없음 → 그래도 빠른 길(최대 2번 · 라운드 1/2)" ', "autoMergeConfirm": false, "fastPath": true' yes '머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2' FAKE_CODEX_CALLED="$CALLED"
+# 2026-11-08 #267 — 계획서에 Fast path 줄이 없어도 빠른 길(상한 1 — 리뷰는 PR 마다 최대 2번)
+merge_case "계획서에 Fast path 줄 없음 → 그래도 빠른 길(최대 2번 · 라운드 1/2)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · ⚡ 빠른 길 — 최대 2번 · 리뷰어 claude 하나 · 라운드 1/2' FAKE_CODEX_CALLED="$CALLED"
 [ ! -e "$CALLED" ] && grep -q '"type":"auto.merge".*"fast":true' "$CORE/.events.jsonl" && echo "  ✔ Fast path 줄 없음 — 리뷰어는 그대로 하나(주 도구 반대쪽) · 사건 fast:true" || { echo "  ✖ Fast path 줄 없음 — 빠른 길 아님 · 반대쪽이 아닌 리뷰어"; FAIL=1; }
 rm -f "$CALLED"
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 상한 1 · 리뷰어 claude 하나 · 라운드 1/1 · 2026-11-08 10:00" \
@@ -1479,29 +1453,29 @@ EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 + 리뷰 끔 레포 → 지금처
 
 rm -f "$CORE/.athena-main-tool.json"
 # 결정 콘솔 · 대체 요청이 둘 다 실패해도 — 계획서 "- Auto decisions:" 줄(등록 실패)이 남아 머지를 막는다(PR #20 2라운드 지적)
-BLOCK_REQUESTS=1 merge_case "A — 콘솔 · 요청 둘 다 실패 → 결정 필요 · 계획서에 결정 대기(등록 실패)" ', "autoMergeConfirm": false' no '· 결정 필요 · 리뷰어 codex 하나 · 라운드 1/3' FAKE_CODEX=product
+BLOCK_REQUESTS=1 merge_case "A — 콘솔 · 요청 둘 다 실패 → 결정 필요 · 계획서에 결정 대기(등록 실패)" ', "autoMergeConfirm": false' no '· 결정 필요 — 2차\(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지\) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2' FAKE_CODEX=product
 MARK="$(grep '^- Auto decisions:' "$CORE/plans/task/x.md")"
 case "$MARK" in "- Auto decisions: web#7 @"*" · 1개 · 등록 실패 · "*) echo "  ✔ A — 결정 대기 줄: $MARK" ;; *) echo "  ✖ A — 결정 대기 줄이 없다: $MARK"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1 ;; esac
 rm -f "$CORE/.requests"
 pending_plan() {   # <결정 대기 줄> — 지난 라운드 줄 · 결정 대기 줄을 둔 계획서
-  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 · 라운드 1/3 · s\n%s\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "$1" > "$CORE/plans/task/x.md"
+  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · 승인 1/1이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기 · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2 · s\n%s\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "$1" > "$CORE/plans/task/x.md"
 }
 run_handle() { : > "$GH_LOG"; rm -f "$GH_LOG.views"; env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" "$@" "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1; }
-printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false, "fastPath": false } ] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
 rm -rf "$CORE/.requests"; pending_plan "$MARK"; run_handle
-! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 승인 1/1이지만' "$CORE/plans/task/x.md" && grep -q '^- Auto decisions: .*등록 실패' "$CORE/plans/task/x.md" \
+! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 이어받은 HEAD이지만' "$CORE/plans/task/x.md" && grep -q '^- Auto decisions: .*등록 실패' "$CORE/plans/task/x.md" \
   && echo "  ✔ A — 요청이 하나도 없어도 등록 실패 줄이 있으면 승인돼도 머지 안 함 · 줄 그대로" || { echo "  ✖ A — 등록 실패 줄로 머지가 막히지 않음"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 rm -rf "$CORE/.requests"; pending_plan "- Auto decisions: web#7 @0000000 · 1개 · 등록됨 · 결정 콘솔에서 다 정하면 저절로 지워진다 · s"; run_handle
 grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && ! grep -q '^- Auto decisions:' "$CORE/plans/task/x.md" \
   && echo "  ✔ A — 등록됨 · 결정 요청이 닫혔으면 해결 — 줄을 지우고 머지" || { echo "  ✖ A — 등록됨 해결"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 # 리뷰어가 실패한 라운드는 지난 리뷰 기록(history)을 덮지 않는다(PR #20 2라운드 지적)
-merge_case "D — 리뷰어가 실패한 라운드 → 리뷰어 부족" ', "autoMergeConfirm": false' no '· 리뷰어 부족\(승인 0/1\) · 리뷰어 codex 하나 · 라운드 1/3' FAKE_CODEX=slow ATHENA_PR_AUTO_TIMEOUT_MS=1500
+merge_case "D — 리뷰어가 실패한 라운드 → 리뷰어 부족" ', "autoMergeConfirm": false' no '· 리뷰어 부족\(승인 0/1\) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2' FAKE_CODEX=slow ATHENA_PR_AUTO_TIMEOUT_MS=1500
 [ ! -e "$TMP/queue-confirm/history/web-7.json" ] && echo "  ✔ D — 리뷰어가 실패한 라운드는 history 를 남기지 않음" || { echo "  ✖ D — 실패한 라운드가 history 를 썼다"; FAIL=1; }
 
 # 결정 D — 1라운드 지적을 기록해 두고, 2라운드 프롬프트에는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 diff 만
 echo; echo "지적은 한 번에(결정 D)"
 PROMPT="$TMP/prompt.txt"
-merge_case "D — 1라운드: 수정 필요 · 지난 지적 기록" ', "autoMergeConfirm": false' no '· 수정 필요 · 리뷰어 codex 하나 · 라운드 1/3' FAKE_PROMPT="$PROMPT" FAKE_CODEX=changes
+merge_case "D — 1라운드: 수정 필요 · 지난 지적 기록" ', "autoMergeConfirm": false' no '· 수정 필요 — 2차\(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지\) · ⚡ 빠른 길 — 최대 2번 · 리뷰어 codex 하나 · 라운드 1/2' FAKE_PROMPT="$PROMPT" FAKE_CODEX=changes
 grep -q "찾을 수 있는 지적을 이번 리뷰에서 모두 낸다" "$PROMPT" && ! grep -q "지난 리뷰 지적" "$PROMPT" && grep -q '"file": "a.js"' "$TMP/queue-confirm/history/web-7.json" \
   && echo "  ✔ D — 1라운드 프롬프트는 '모두 한 번에' · history 에 보낸 지적" || { echo "  ✖ D — 1라운드"; sed 's/^/      /' "$PROMPT" | head -20; FAIL=1; }
 S1="$SHA"; echo 'fixed' > "$WT/a.js"; git -C "$WT" add a.js && git -C "$WT" -c user.name=t -c user.email=t@t commit -q -m fix
@@ -1510,7 +1484,7 @@ env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="
   "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
 grep -q "이번은 2번째 리뷰다" "$PROMPT" && grep -q "지난 리뷰 지적 (@${S1:0:7}" "$PROMPT" && grep -q "1) a.js:1 — p → f" "$PROMPT" \
   && grep -q "지난 리뷰 HEAD @${S1:0:7} 이후 바뀐 것만" "$PROMPT" && grep -q "^+fixed" "$PROMPT" \
-  && ! grep -q "^pr diff" "$GH_LOG" && grep -q "· 라운드 2/3" "$CORE/plans/task/x.md" \
+  && ! grep -q "^pr diff" "$GH_LOG" && grep -q "· 라운드 2/2" "$CORE/plans/task/x.md" \
   && echo "  ✔ D — 2라운드 프롬프트: 지난 지적 · 지난 HEAD 이후 diff 만(gh pr diff 안 부름)" || { echo "  ✖ D — 2라운드"; sed 's/^/      /' "$PROMPT" | tail -25; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 
 # 완료(done)된 계획서에 이어 올린 PR(2026-10-26 · PR #28 재현) — #27 이 머지돼 계획서가 done 이 된 뒤 같은 계획서에서 새 PR 을 올리면
@@ -1527,7 +1501,7 @@ case "$1 $2" in
 esac
 SH
 chmod +x "$FBIN/gh"
-printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "fastPath": false, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
 G -C "$TMP/web" fetch -q origin 2>/dev/null
 G -C "$TMP/web" worktree add -q -b feat/y "$TMP/wt-y" origin/dev 2>/dev/null
 WTY="$(cd "$TMP/wt-y" && pwd -P)"

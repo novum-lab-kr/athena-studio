@@ -111,7 +111,6 @@
   "status.done": "✅ 完了",
   "status.open": "📌 やること",
   "status.wontfix": "🚫 やらない",
-  "chip.fastPath": "⚡ fast path",
   "chip.archived": "🗄 保管 {at}",
   "history.openConsole": "決定コンソールを開く ↗",
   "history.bundle": "📎 イシュー+計画書",

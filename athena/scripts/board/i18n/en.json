@@ -111,7 +111,6 @@
   "status.done": "✅ Done",
   "status.open": "📌 To do",
   "status.wontfix": "🚫 Won't do",
-  "chip.fastPath": "⚡ Fast path",
   "chip.archived": "🗄 Archived {at}",
   "history.openConsole": "Open decision console ↗",
   "history.bundle": "📎 Issue + plan",
