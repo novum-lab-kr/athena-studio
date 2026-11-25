@@ -19,12 +19,12 @@ printf '%s' "$INSTR_OUT" | grep -q "ship.sh --plan $ICORE/plans/task/20261030-a.
 INSTR_OUT="$(instr ', "autoMerge": true')"
 printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다" && ! printf '%s' "$INSTR_OUT" | grep -q -- "--direct-merge" \
   && echo "  ✔ 자동 PR 켬 → 지금처럼 PR 흐름" || { echo "  ✖ 켬 지시문"; FAIL=1; }
-INSTR_OUT="$(instr '')"
-! printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다\|자동 PR 을 껐다" \
-  && echo "  ✔ autoMerge 키 없음 → 저절로 흐름 지시 없음" || { echo "  ✖ 키 없음 지시문"; FAIL=1; }
-INSTR_OUT="$(instr ', "autoPr": false')"
-! printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다\|자동 PR 을 껐다" \
-  && echo "  ✔ autoMerge 키 없이 autoPr:false 만 → 지시 없음(바로 머지 안 함)" || { echo "  ✖ autoPr 만 지시문"; FAIL=1; }
+# autoMerge 키가 없으면 저절로 흐름 지시가 없다 — autoPr:false 만 있어도 같다(바로 머지 안 함)
+LOOSE=""
+for piece in '' ', "autoPr": false'; do
+  instr "$piece" | grep -q "끝나면 PR 을 올린다\|자동 PR 을 껐다" && LOOSE="$LOOSE [$piece]"
+done
+expect "autoMerge 키 없음(autoPr:false 만 있어도) → 저절로 흐름 지시 없음" '[ -z "$LOOSE" ]' "지시가 실린 설정:$LOOSE"
 
 # 이어 보내기(--reuse-pane) — 처음 받은 지시가 아니라 지금 설정 기준 올리는 방식이 전송문에 실린다 · 디스패치 결과에 올리는 방식 한 줄
 echo; echo "이어 보내기·디스패치 결과의 올리는 방식 (delegate.sh --reuse-pane)"
@@ -55,9 +55,8 @@ reuse() {   # 설정 조각 → 이어 보내기 결과(전송문은 $TMP/reuse-
 }
 REUSE_OUT="$(reuse ', "autoMerge": true, "autoPr": false')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
 printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_SENT" | grep -q "지금 설정 기준" && ! printf '%s' "$REUSE_SENT" | grep -q "끝나면 PR 을 올린다" \
-  && echo "  ✔ 이어 보내기(PR 끔) — 전송문에 최신 규칙(ship.sh --direct-merge)이 실린다" || { echo "  ✖ 이어 보내기 PR 끔 전송문"; printf '%s\n' "$REUSE_OUT" | head -5; FAIL=1; }
-printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
-  && echo "  ✔ 디스패치 결과에 올리는 방식 한 줄(바로 머지)" || { echo "  ✖ 디스패치 결과 올리는 방식 줄"; printf '%s\n' "$REUSE_OUT" | tail -4; FAIL=1; }
+  && printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
+  && echo "  ✔ 이어 보내기(PR 끔) — 전송문에 최신 규칙(ship.sh --direct-merge) · 디스패치 결과에 올리는 방식 한 줄(바로 머지)" || { echo "  ✖ 이어 보내기 PR 끔 전송문 · 결과 줄"; printf '%s\n' "$REUSE_OUT" | tail -5; FAIL=1; }
 REUSE_OUT="$(reuse ', "autoMerge": true')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
 printf '%s' "$REUSE_SENT" | grep -q "끝나면 PR 을 올린다" && ! printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 끝나면 저절로 draft PR" \
   && echo "  ✔ 설정이 바뀌면(PR 켬) 이어 보내기 전송문 · 결과 줄도 바뀐다" || { echo "  ✖ 이어 보내기 PR 켬"; FAIL=1; }
@@ -94,10 +93,9 @@ grep -q '^screen pane split --target p91 ' "$TMP/beside-screen.log" && ! printf 
   && echo "  ✔ --beside p91 — pane 밖에서도 그 pane 옆에 쪼갰다" || { echo "  ✖ --beside 띄우기"; printf '%s\n' "$BESIDE_OUT" | tail -3; cat "$TMP/beside-screen.log"; FAIL=1; }
 : > "$TMP/beside-screen.log"
 BESIDE_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --beside p77 2>&1)"
-printf '%s' "$BESIDE_OUT" | grep -q '가짜화면 밖입니다' && ! grep -q 'pane split' "$TMP/beside-screen.log" \
-  && echo "  ✔ --beside 의 pane 이 없으면 띄우지 않고 '밖입니다'" || { echo "  ✖ 없는 pane --beside"; printf '%s\n' "$BESIDE_OUT" | tail -3; FAIL=1; }
-BESIDE_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --beside 'p1;x' 2>&1)"
-printf '%s' "$BESIDE_OUT" | grep -q 'pane id 가 이상하다' && echo "  ✔ --beside 의 pane id 를 거른다" || { echo "  ✖ --beside id 검사"; FAIL=1; }
+BAD_ID_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --beside 'p1;x' 2>&1)"
+printf '%s' "$BESIDE_OUT" | grep -q '가짜화면 밖입니다' && ! grep -q 'pane split' "$TMP/beside-screen.log" && printf '%s' "$BAD_ID_OUT" | grep -q 'pane id 가 이상하다' \
+  && echo "  ✔ --beside 의 pane 이 없으면 띄우지 않고 '밖입니다' · 이상한 pane id 는 거른다" || { echo "  ✖ 없는 pane · 이상한 id --beside"; printf '%s\n' "$BESIDE_OUT" "$BAD_ID_OUT" | tail -4; FAIL=1; }
 
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"

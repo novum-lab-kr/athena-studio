@@ -42,6 +42,7 @@ direct_case() {   # <이름> <레포 JSON 조각> <머지 기대 yes|no> <종료
   else echo "  ✖ $name — 머지 기대 $want · 실제 $merged · 종료 기대 $wantcode · 실제 $code · 줄: $got"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; fi
 }
 direct_requests() { ls "$DCORE/.requests" 2>/dev/null | grep -c json; }
+{
 direct_case "자동 머지 → 검증 · 충돌 확인 뒤 PR 없이 squash 로 base 에 push" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨 — squash → main @[0-9a-f]{7}\(PR 없음\)'
 [ "$(git -C "$DORIGIN" rev-list --count refs/heads/main)" = 2 ] && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main^)" = "$DBASE" ] && git -C "$DORIGIN" cat-file -e refs/heads/main:f.txt \
   && echo "  ✔ 머지 커밋은 base 위의 하나(squash) · 작업 브랜치는 원격에 올리지 않음" || { echo "  ✖ squash 커밋 모양"; FAIL=1; }
@@ -56,6 +57,8 @@ env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/
   && echo "  ✔ 같은 HEAD 를 다시 돌리면 이미 머지됨으로 넘김 · base 그대로 · 검증 다시 안 돎" || { echo "  ✖ 같은 HEAD 재실행 — 종료 $DCODE · 검증 $(cat "$DENVLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
 direct_case "건너뜀 허용 환경(ATHENA_VERIFY_ALLOW_SKIP)을 줘도 검증에는 넘기지 않는다" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨' ATHENA_VERIFY_ALLOW_SKIP=all
 grep -q 'STRICT=1 ALLOW=\[\]' "$DENVLOG" && ! grep -q 'ALLOW=\[all\]' "$DENVLOG" && echo "  ✔ 건너뜀 허용 환경이 비워져 검증에 넘어갔다" || { echo "  ✖ 건너뜀 허용이 새어 들어감 — $(cat "$DENVLOG")"; FAIL=1; }
+} > "$GRP"; grp_end "바로 머지 — squash 커밋 하나 · 엄격 검증(건너뜀 허용 안 넘김) · 사건 direct:true · 같은 HEAD 다시 돌면 이미 머지됨"
+{
 direct_case "확인 후(기본) → 검증 통과 뒤 [머지] 요청만 · 머지 안 함" ', "autoMerge": true, "autoPr": false' no 0 '머지 확인 대기'
 [ "$(direct_requests)" -ge 1 ] && echo "  ✔ 확인 후 → [작업] 요청이 열림" || { echo "  ✖ 확인 후인데 요청이 없다"; FAIL=1; }
 direct_case "직접 → 브랜치까지만 · 요청 없음" ', "autoMerge": true, "autoPr": false, "autoMergeManual": true' no 0 '브랜치까지만'
@@ -64,10 +67,14 @@ direct_case "호환 — autoMerge 키 없음 + autoPr false → 바로 머지 �
 direct_case "호환 — autoMerge 만(autoPr 키 없음) → 바로 머지 안 함(PR 흐름)" ', "autoMerge": true, "autoMergeConfirm": false' no 1 '^$'
 direct_case "main 직접 레포는 바로 머지 대상 아님" ', "autoMerge": true, "autoPr": false, "direct": true, "autoMergeConfirm": false' no 1 '^$'
 PLAN_AGENT='web-fe, api-be' direct_case "여러 레포 계획서는 대상 아님" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '^$'
+} > "$GRP"; grp_end "바로 머지 대상 — 확인 후는 요청만 · 직접은 브랜치까지 · 호환 둘 · main 직접 · 여러 레포는 아님"
+{
 PENDING=1 direct_case "안 정한 결정이 있으면 머지 안 함" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '결정 필요'
 direct_case "검증 실패 → 머지 안 함 · 실패로 알림(줄 · 요청)" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기 — 검증 실패' FAKE_VERIFY_FAIL=1
 [ "$(direct_requests)" -ge 1 ] && echo "  ✔ 검증 실패 → [작업] 요청이 열림" || { echo "  ✖ 검증 실패인데 요청이 없다"; FAIL=1; }
+} > "$GRP"; grp_end "안 정한 결정 · 검증 실패 → 머지 안 함(실패는 줄 · 요청)"
 # 바로 머지 확인 — [머지] 답 뒤 검증 도중 처리기가 꺼져도 대기 파일이 남아 이어받는다(같은 트리는 빈 커밋을 밀지 않는다)
+{
 direct_run() {   # [환경…]
   env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-direct" "$@" "$(command -v node)" --input-type=module -e "
     const { checkConfirms } = await import('$DCORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/direct.out" 2>&1
@@ -106,8 +113,10 @@ printf '{"plan":"plans/task/x.md","repo":"web","branch":"feat/x","sha":"%s","bas
 direct_run
 [ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DTIP" ] && [ -z "$(direct_confirm_files)" ] && direct_line | grep -q '머지됨' \
   && echo "  ✔ 바로 머지 — 이미 들어간 내용이면 빈 커밋을 밀지 않고 머지됨" || { echo "  ✖ 바로 머지 — 빈 커밋 — $(direct_line) · base $(git -C "$DORIGIN" rev-list --count refs/heads/main)개"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+} > "$GRP"; grp_end "바로 머지 확인 — 끊긴 뒤 이어 머지 · 줄 적은 뒤 파일만 치움 · 이미 들어간 내용은 빈 커밋 없이 머지됨"
 cp "$TMP/direct-reuse.keep" "$DCORE/scripts/verify/reuse.sh"
 mv "$DCORE/scripts/verify/reuse.sh" "$DCORE/scripts/verify/reuse.sh.off"
+{
 direct_case "검증 스크립트가 없으면 머지 안 함 · 실패로 알림" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기'
 direct_case "검증 스크립트가 없으면 확인 후 설정도 요청을 열지 않고 실패로" ', "autoMerge": true, "autoPr": false' no 1 '검증 대기'
 mv "$DCORE/scripts/verify/reuse.sh.off" "$DCORE/scripts/verify/reuse.sh"
@@ -125,6 +134,7 @@ env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/
   && echo "  ✔ base 와 충돌 → 머지 안 함 · base 그대로 · 줄 · 요청" || { echo "  ✖ 충돌 처리 — 종료 $DCODE"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
 REJECT_PUSH=1 direct_case "base 에 push 가 거부되면(브랜치 보호) 머지 안 함 · 강제 push 없이 실패로 알림" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 'push 가 거부됨'
 [ "$(direct_requests)" -ge 1 ] && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DBASE" ] && echo "  ✔ push 거부 → [작업] 요청이 열림 · 원격 base 그대로" || { echo "  ✖ push 거부 요청 · base"; FAIL=1; }
+} > "$GRP"; grp_end "머지 안 함 — 검증 스크립트 없음(확인 후도) · 미커밋 · base 충돌 · push 거부(강제 안 함)"
 rm -f "$DORIGIN/hooks/pre-receive"
 
 # ── 바로 머지 앞의 리뷰 문(2026-11-04 결정) — 넓은 수정이면 같은 HEAD 의 "- Review result: 승인" 이 있을 때만 머지 · 없으면 reviewer 를 띄우고 기다린다 ─────
@@ -169,6 +179,7 @@ AUTO=', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false'
 GATE_ENV=(FAKE_DELEGATE_LOG="$DLOG" FAKE_SCREEN_LOG="$DSLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500)
 gate_reset() { : > "$DLOG"; : > "$DSLOG"; }
 # ③ 문서만 · 작은 수정 → 리뷰 없이 지금처럼(feat/x 는 feat.txt 한 줄)
+{
 gate_reset; direct_case "③ 작은 수정(문서 파일 1개) → reviewer 안 띄우고 지금처럼 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
 [ ! -s "$DLOG" ] && grep -q '리뷰 없이 — 넓은 수정 아님(문서만 1개)' "$TMP/direct.out" && echo "  ✔ reviewer 를 띄우지 않았다 · 판정 '문서만 1개'" || { echo "  ✖ 작은 수정인데 reviewer 를 띄움 — $(cat "$DLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
 # ① 넓은 수정 + 같은 HEAD 승인 없음 → reviewer 띄움 · 결론 없으면(시간 초과) 머지 안 함
@@ -211,6 +222,7 @@ gate_reset; DBRANCH=feat/wide PLAN_EXTRA="- Auto merge: web feat/wide @${DMORE:0
 # 확인 후 머지(confirm) 도 리뷰 문을 먼저 — 수정 필요면 [머지] 요청을 열지 않는다
 gate_reset; DBRANCH=feat/wide direct_case "확인 후 머지 레포도 넓은 수정이면 리뷰 먼저 — 수정 필요면 [머지] 요청 없음" ', "autoMerge": true, "autoPr": false' no 1 '리뷰 때문에 멈춤 — 수정 필요' "${GATE_ENV[@]}" FAKE_REVIEW=changes
 [ "$(direct_requests)" = 0 ] && echo "  ✔ 리뷰 전에는 [머지] 요청을 열지 않는다" || { echo "  ✖ 리뷰 막혔는데 [머지] 요청이 열림"; FAIL=1; }
+} > "$GRP"; grp_end "넓은 수정 리뷰 문 — 작은 수정은 그대로 · 결론 없음 · 수정 필요 · 다시 안 띄움 · 승인 · 이미 승인 · 짧은 리뷰 · 상한 · 확인 후도 먼저"
 # 민감 경로 · 에이전트 표시 · 줄 수 — 판정 함수(스크립트 기준값의 근거는 lib 주석 · 계획서 Decisions)
 node --input-type=module -e "
   const { wideChangeVerdict, planWideMark, directReviewRounds, WIDE_MIN_CODE_FILES, WIDE_MIN_CODE_LINES } = await import('$DCORE/scripts/lib/pr-auto.mjs')
@@ -247,6 +259,7 @@ node --input-type=module -e "
 " || FAIL=1
 # 보안 검토 문(security-reviewer · 2026-11-08) — "- Security result:" 에 높음이 남으면 바로 머지 · 넘기기 · PR 머지를 막고 담당 pane 에 고칠 것을 보낸다. 중간 이하는 통과
 echo; echo "보안 검토 문(securityGate)"
+{
 NOW_STAMP="$(date '+%Y-%m-%d %H:%M')"
 P3PANE="{\"id\":\"p3\",\"agent\":\"claude\",\"cwd\":\"$DWT\",\"label\":\"🤖 web-fe\"}"
 FX_SHA="$(DG rev-parse --short feat/x)"
@@ -276,6 +289,7 @@ printf -- '- Security result: 높음 2 · 중간 0 @abc1234 · tree abcdef123456
 node "$DCORE/scripts/security-gate.mjs" check --plan "$SEC_PLAN" --repo web --branch feat/x >/dev/null; SEC_CODE=$?
 node "$DCORE/scripts/security-gate.mjs" check --plan "$SEC_PLAN" --repo web --branch feat/y >/dev/null; SEC_OTHER=$?
 [ "$SEC_CODE" = 3 ] && [ "$SEC_OTHER" = 0 ] && echo "  ✔ security-gate.mjs check — 높음이면 3(ship.sh 가 멈춘다) · 다른 브랜치는 0" || { echo "  ✖ security-gate.mjs check — $SEC_CODE · $SEC_OTHER"; FAIL=1; }
+} > "$GRP"; grp_end "보안 검토 문 — 높음이면 막고 담당 pane 에 · 결과 없으면 띄움 · 닫힌 띄움은 다시 · 위험하지 않으면 안 띄움 · check 종료 코드"
 node --input-type=module -e "
   const { securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict } = await import('$DCORE/scripts/lib/pr-auto.mjs')
   const at = { repo: 'web', branch: 'feat/x' }
@@ -317,6 +331,7 @@ node --input-type=module -e "
   console.log('  ✔ 보안 판정 — 높음만 막음 · 레포 · 브랜치마다 · 마지막 줄 · 띄움 뒤 결과 기다림(시간 · 닫힌 pane 이면 만료) · tree 일치 · 지운 파일 · 위험한 수정 갈래')
 " || FAIL=1
 # Actions 로 넘기기 길도 같은 문 — 넓은 수정이면 넘기기 전에 리뷰 · 승인 없이는 handoff/<브랜치> 를 밀지 않는다
+{
 handoff_case() {   # <이름> <기대 종료> <줄 정규식> [환경…]
   local name="$1" wantcode="$2" line="$3"; shift 3
   rm -rf "$DCORE/.requests" "$DCORE/.events.jsonl" "$DCORE/plans/task/"* "$TMP/data/state/handoff"; gate_reset
@@ -336,6 +351,7 @@ PLAN_EXTRA="- Security result: 높음 1 · 중간 0 @${DWIDE:0:7} · tree $DWIDE
 grep -q 'delegate reviewer' "$DLOG" && echo "  ✔ 넘기기 전에 reviewer 를 띄웠다" || { echo "  ✖ 넘기기 전 reviewer 없음"; FAIL=1; }
 handoff_case "넘기기 — 넓은 수정 + 승인 → 리뷰 문을 지나 넘기기 단계로(이 시험 커밋엔 workflow 파일이 없어 거기서 멈춤)" 1 '리뷰 기다리는 중 — 넓은 수정' "${GATE_ENV[@]}" FAKE_REVIEW=approve
 grep -q "리뷰 승인 @${DMORE:0:7}" "$TMP/direct.out" && grep -q 'athena-handoff.yml 가 없다' "$TMP/direct.out" && echo "  ✔ 승인 뒤 넘기기 단계(workflow 확인)까지 갔다" || { echo "  ✖ 승인 뒤 넘기기 단계"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+} > "$GRP"; grp_end "Actions 넘기기도 같은 리뷰 문 — 승인 없이는 handoff 안 밂"
 
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"

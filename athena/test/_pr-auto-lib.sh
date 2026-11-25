@@ -14,6 +14,13 @@ G() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main "$@"; }
 expect() {   # <이름> <조건(eval)> [자세히]
   if eval "$2"; then echo "  ✔ $1"; else echo "  ✖ $1"; [ -n "${3:-}" ] && echo "$3" | sed 's/^/      /'; FAIL=1; fi
 }
+# 같은 사례의 여러 실행을 ✔ 하나로 — { …expect · run_case · merge_case… } > "$GRP"; grp_end <이름>
+#   안에 ✖ 가 없으면 ✔ 하나 · 있으면 ✖ <이름> 아래 잡힌 출력 전체(어느 소검사인지 · 자세히 — │ 를 붙여 통과 줄 세기에 안 들어가게). 중괄호는 subshell 이 아니라 변수 · FAIL 이 그대로 남는다
+GRP="$TMP/group.out"
+grp_end() {   # <이름>
+  if grep -q '✖' "$GRP"; then echo "  ✖ $1"; sed 's/^/    │/' "$GRP"; FAIL=1; else echo "  ✔ $1"; fi
+  : > "$GRP"
+}
 
 # 기대값 라벨 — lib 상수 그대로(⚡ 빠른 길 · 리뷰 최대 횟수 · 마지막 차수 · 옛 2차)
 { read -r FAST_PATH; read -r FAST_REVIEWS; read -r FAST_MAX_ROUNDS; read -r FAST_LAST; read -r LEGACY_FAST_SECOND; } < <(node --input-type=module -e "
@@ -65,6 +72,7 @@ chmod +x "$BIN/claude" "$BIN/codex"
 # 사용자 진짜 ~/.codex/config.toml 이 구성 메모 · 인자에 섞이지 않게 기본은 빈 CODEX_HOME
 export CODEX_HOME="$TMP/codex-default"; mkdir -p "$CODEX_HOME"
 run_case() {   # <이름> <PATH> <기대 판정> [환경…] · RC_CORE=<코어 사본> 이면 그 사본의 pr-auto.mjs 로(주 도구 기록을 소스 폴더에 만들지 않는다)
+  #   RC_ALSO=<조건(eval)> 이면 판정과 함께 그 조건도 봐서 하나로 센다(부른 인자 · 안 부른 도구 같은 같은 실행의 확인)
   local name="$1" path="$2" want="$3"; shift 3
   local got core="${RC_CORE:-$PWD}"
   got="$(env PATH="$path" ATHENA_PR_AUTO_TIMEOUT_MS=1500 "$@" "$(command -v node)" --input-type=module -e "
@@ -72,7 +80,9 @@ run_case() {   # <이름> <PATH> <기대 판정> [환경…] · RC_CORE=<코어 
     const { aggregate, reviewerBrief } = await import('$core/scripts/lib/pr-auto.mjs')
     const results = await runReviewers('리뷰해 줘', JSON.parse(process.env.FAKE_CONFIG || '{}'))
     console.log(aggregate(results).verdict + ' ' + reviewerBrief(results))" 2>&1 | tail -1)"
-  if [ "${got%% *}" = "$want" ]; then echo "  ✔ $name — $got"; else echo "  ✖ $name — 기대 $want · 실제 $got"; FAIL=1; fi
+  if [ "${got%% *}" != "$want" ]; then echo "  ✖ $name — 기대 $want · 실제 $got"; FAIL=1
+  elif [ -n "${RC_ALSO:-}" ] && ! eval "$RC_ALSO"; then echo "  ✖ $name — 판정은 $got · 덧붙인 조건 실패: $RC_ALSO"; FAIL=1
+  else echo "  ✔ $name — $got"; fi
 }
 
 # 가짜 화면 — FAKE_PANES(JSON 조각)를 pane 목록으로 · 부른 것은 FAKE_SCREEN_LOG 에(없으면 버림)

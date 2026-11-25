@@ -49,6 +49,7 @@ ship() { (cd "$CORE" && "${ENVS[@]}" bash scripts/ship.sh --plan "$PLANF" --dir 
 
 write_plan '수정 필요' p3; : > "$FLOG"
 OUT="$(ship --body-file "$TMP/bad-body.md")"; CODE=$?
+{
 expect "본문 필수 절이 없으면 거절 · gh pr edit 안 부름" '[ $CODE != 0 ] && ! grep -q "gh pr edit" "$FLOG"' "$OUT"
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"
 OUT="$(ship --body-file "$TMP/body.md")"; CODE=$?
@@ -56,10 +57,13 @@ expect "자동 리뷰의 수정 요청이 없으면 거절 · gh pr edit 안 부
 write_plan '수정 필요' p3; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
 expect "--body-file 없이 올릴 커밋도 없으면 거절" '[ $CODE != 0 ] && echo "$OUT" | grep -q "body-file"' "$OUT"
+} > "$GRP"; grp_end "본문 고침 거절 — 필수 절 없음 · 수정 요청 없음 · body-file 도 커밋도 없음(gh pr edit 안 부름)"
 : > "$FLOG"
 OUT="$(ship --body-file "$TMP/body.md")"; CODE=$?
+{
 expect "조건이 다 차면 본문만 — gh pr edit 7 --body-file · push 없음" '[ $CODE = 0 ] && grep -q "gh pr edit 7 --body-file $TMP/body.md" "$FLOG" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA" ]' "$OUT"
 expect "계획서 줄은 본문 고침(같은 HEAD · 라운드 그대로) · 대기열에 같은 HEAD" 'grep -q "^- Auto review: web#7 @$S7 · 본문 고침 — 다시 리뷰 대기 · '"라운드 1/${FAST_REVIEWS}"'" "$CORE/$PLANF" && grep -lq "$SHA" "$QUEUE"/*.json' "$(grep 'Auto review' "$CORE/$PLANF"; ls "$QUEUE")"
+} > "$GRP"; grp_end "본문 고침 — gh pr edit 만 · push 없음 · 계획서 줄 같은 HEAD · 대기열"
 rm -f "$QUEUE"/*.json
 
 # 머지 결과 알림 — 머지 확인 답(머지 · 보류)을 처리한 뒤 Work ref pane 이 살아 있으면 한 줄 · 없으면 보내지 않는다
@@ -75,6 +79,7 @@ confirm() {   # <답> — 요청을 열고 답한 뒤 머지 확인 대기 파�
 run_confirms() { (cd "$CORE" && "${ENVS[@]}" FAKE_PANES="$1" node --input-type=module -e "await (await import('./scripts/pr-auto.mjs')).checkConfirms()" 2>&1); }
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 머지
 OUT="$(run_confirms '{"id":"p3"}')"
+{
 expect "머지 → squash · pane p3 에 '[자동 리뷰 → web-fe] … 머지됨' 한 줄" 'grep -q "gh pr merge 7 .*--squash" "$FLOG" && grep -q "screen pane send-text p3 \[자동 리뷰 → web-fe\] PR web#7 @$S7 — 머지됨" "$FLOG" && grep -q -e "--enter\$" "$FLOG" && ! grep -q "send-keys" "$FLOG"' "$OUT
 $(cat "$FLOG")"
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 보류
@@ -85,16 +90,19 @@ write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 머지
 OUT="$(run_confirms '')"
 expect "pane 이 없으면 보내지 않는다(닫힌 세션을 다시 열지 않음) · 계획서 줄은 머지됨" '! grep -q "send-text" "$FLOG" && ! grep -q "delegate" "$FLOG" && grep -q "· 머지됨 — squash → dev ·" "$CORE/$PLANF"' "$OUT
 $(cat "$FLOG")"
+} > "$GRP"; grp_end "머지 결과 알림 — 머지 · 보류 · pane 없으면 안 보냄"
 
 # push 하자마자 대기열에(지시 1) — --auto-push 로 새 커밋을 올리면 그 HEAD 가 바로 대기열에 · 같은 HEAD 를 또 넣어도(현황판 안전망) 하나만
 echo more > "$WT/b.txt" && G -C "$WT" add b.txt && G -C "$WT" commit -q -m y
 SHA2="$(git -C "$WT" rev-parse HEAD)"
 write_plan '수정 필요' p3; printf -- '- `%s` feat/x · 시험2 · push 안 함\n' "${SHA2:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
+{
 expect "--auto-push 새 커밋 → push · 그 HEAD 가 바로 대기열에(5분 감지를 기다리지 않음)" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA2" ] && [ "$(grep -l "$SHA2" "$QUEUE"/*.json 2>/dev/null | wc -l | tr -d " ")" = 1 ]' "$OUT
 $(ls "$QUEUE")"
 OUT="$(cd "$CORE" && "${ENVS[@]}" node scripts/pr-auto.mjs --enqueue --plan "$PLANF" --pr web#7 --head "$SHA2" 2>&1)"
 expect "현황판이 같은 HEAD 를 또 넣어도 하나만(이미 대기열에 있다)" 'echo "$OUT" | grep -q "이미" && [ "$(ls "$QUEUE"/*.json | wc -l | tr -d " ")" = 1 ]' "$OUT"
+} > "$GRP"; grp_end "--auto-push — 새 커밋 push · 바로 대기열 · 같은 HEAD 는 하나만"
 rm -f "$QUEUE"/*.json
 
 # 충돌 풀기(2026-10-26 · PR #21 재현) — base 를 합친 merge 중이면 commit.sh 가 merge 커밋을 만들고, ship.sh --auto-push 가 충돌로 검증 대기인 PR 에 올린다
@@ -108,6 +116,7 @@ commit() { (cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --
 merge_base() { (cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" "$@" --merge-base 2>&1); }
 write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3
 OUT="$(merge_base -m x)"; CODE=$?
+{
 expect "--merge-base 에 -m 을 주면 거부(merge 안 걺)" '[ $CODE != 0 ] && ! git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$OUT"
 echo dirty >> "$WT/b.txt"
 OUT="$(merge_base)"; CODE=$?
@@ -119,7 +128,9 @@ expect "--merge-base — prBase(origin/dev)를 merge --no-ff --no-commit 으로 
 OUT="$(merge_base)"; CODE=$?
 expect "--merge-base — 이미 merge 중이면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "이미 merge 중"' "$OUT"
 expect "merge 중 · 충돌이 남음(시험 준비)" '[ -n "$(git -C "$WT" diff --name-only --diff-filter=U)" ] && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null'
+} > "$GRP"; grp_end "--merge-base — -m · 미커밋 거부 · prBase 를 걺 · 이미 merge 중 거부"
 OUT="$(commit c.txt)"; CODE=$?
+{
 expect "merge 중 풀지 않은 파일(a.txt)이 남으면 거부 · 스테이징된 merge 결과는 그대로" '[ $CODE != 0 ] && echo "$OUT" | grep -q "풀지 않은 파일이 있다: a.txt" && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null && [ "$(git -C "$WT" diff --cached --name-only --diff-filter=A)" = c.txt ]' "$OUT"
 OUT="$(commit a.txt)"; CODE=$?
 expect "충돌 표시가 남은 파일은 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "충돌 표시" && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$OUT"
@@ -131,10 +142,12 @@ $(grep -A3 '## Commits' "$CORE/$PLANF")"
 echo z > "$WT/z.txt" && G -C "$WT" add z.txt && echo y > "$WT/y.txt"
 OUT="$(commit y.txt)"; CODE=$?
 expect "merge 가 아니면 남의 스테이징 거부는 그대로" '[ $CODE != 0 ] && echo "$OUT" | grep -q "원래 스테이징돼 있던 변경이 있다"' "$OUT"
+} > "$GRP"; grp_end "merge 커밋 — 풀지 않은 파일 · 충돌 표시 거부 · 풀면 merge 커밋 · merge 가 아니면 남의 스테이징 거부"
 G -C "$WT" reset -q -- z.txt; rm -f "$WT/z.txt" "$WT/y.txt"
 # athena-studio#97 — 줄이 다른 이유(워크트리 HEAD 다름)로 검증 대기인 사이 base 와 충돌이 생기면 줄은 그대로다. GitHub 가 지금 CONFLICTING 이면 merge 커밋을 받는다
 write_plan "검증 대기 — 워크트리 HEAD 가 PR HEAD(${SHA2:0:7})와 다름" p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(FAKE_MERGEABLE=CONFLICTING ship)"; CODE=$?
+{
 expect "줄이 충돌이 아니어도 GitHub 가 CONFLICTING 이면 base 를 합친 merge 커밋을 빨리 감기 push(#97)" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ]' "$OUT"
 # 요청 줄이 없어도 이 계획서의 열린 PR 에 기록된 커밋을 빨리 감기로 올리는 것은 받는다(옆 reviewer · 아테나 지시로 고친 커밋)
 echo plain > "$WT/plain.txt" && G -C "$WT" add plain.txt && G -C "$WT" commit -q -m plain; PLAIN="$(git -C "$WT" rev-parse HEAD)"
@@ -150,10 +163,12 @@ git -C "$TMP/origin.git" update-ref refs/heads/feat/x "$SHA2"; rm -f "$QUEUE"/*.
 write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
 expect "충돌로 검증 대기면 merge 커밋을 빨리 감기 push · 그 HEAD 가 대기열에" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ] && grep -lq "$MERGE_COMMIT" "$QUEUE"/*.json' "$OUT"
+} > "$GRP"; grp_end "빨리 감기 push — CONFLICTING merge 커밋 · 기록 없는 커밋 거절 · 기록된 커밋 · 충돌 검증 대기"
 rm -f "$QUEUE"/*.json
 # base 합침 merge 커밋은 라운드를 올리지 않는다 — 지난 줄이 상한 라운드(2/3)여도 멈추거나 이어받지 않고 그 라운드로 한 번 리뷰(--dry-run 으로 할 일만)
 sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 2/2 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+{
 expect "base 합침 — 라운드 2 그대로 · 멈춤 · 이어받음 아님 · 리뷰를 돈다" 'echo "$OUT" | grep -q "'"라운드 2/${FAST_REVIEWS}"' · ⚡ 빠른 길 · base 합침" && ! echo "$OUT" | grep -q "멈춤" && ! echo "$OUT" | grep -q "'"${FAST_LAST}"' 짧은 리뷰 —"' "$OUT"
 # athena-studio#97 모양 — 계획서 하나에 PR 이 여럿이라 Work ref 가 다른 PR 의 (지워진) 워크트리 · 줄은 "검증 대기 — 워크트리 HEAD 다름 · 2/2".
 # PR 브랜치(feat/x)를 체크아웃한 워크트리를 레포 워크트리 목록에서 찾아 base 합침으로 본다
@@ -176,6 +191,7 @@ expect "(시험 준비) 다른 수정을 섞은 merge 커밋" '[ $CODE = 0 ] && 
 sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${MERGE_COMMIT:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 2/2 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "충돌 풀기 밖의 수정(b.txt)이 섞이면 base 합침 아님 — 평소처럼 라운드 3(멈춤)" 'echo "$OUT" | grep -q "'"라운드 3/${FAST_REVIEWS}"'" && echo "$OUT" | grep -q "할 일: 멈춤" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+} > "$GRP"; grp_end "base 합침 판정 — 라운드 그대로 · 지워진 Work ref(#97) · 첫 부모 다름 · 섞인 수정은 아님"
 # 큰 diff(syung#23) — 생성물은 빼고 · 코드 파일이 넘치면 승인이어도 "잘린 diff 승인" 으로 머지하지 않음(--dry-run 으로 할 일만)
 node -e '
 const line = (path, body) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1,2 @@\n${body}\n`
@@ -187,6 +203,7 @@ require("fs").writeFileSync(process.argv[3], line("src/huge.mjs", Array.from({ l
 # 2026-11-25 — 리뷰는 최대 3번이라 1차 수정 필요 뒤 2라운드는 평소 증분 리뷰(짧은 리뷰도 같은 diff 길)
 cp "$CORE/$PLANF" "$TMP/plan.keep"; write_plan '수정 필요' p3
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+{
 expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 2조각으로 나눠 다 보고 평소 승인 길(잘린 diff 멈춤 없음 · #267)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "2조각으로 나눠 리뷰" && echo "$OUT" | grep -q "할 일: 안 정한 결정 · 같은 HEAD 검증" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/huge.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "파일 하나가 한 조각보다 크면 나눠도 못 봄 — 승인이어도 머지하지 않음(잘린 diff 승인 · 사람에게)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)" && echo "$OUT" | grep -q "다 넣지 못했다" && ! echo "$OUT" | grep -q "조각으로 나눠"' "$OUT"
@@ -218,6 +235,7 @@ OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$T
 expect "코드 긴 줄을 줄인 PR — 승인이어도 잘린 diff 승인(못 본 코드 파일 1개 · 머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/data-long.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "데이터 모양 긴 줄만 줄인 PR(syung#12) — 평소 승인 길" 'echo "$OUT" | grep -q "할 일: 안 정한 결정 · 같은 HEAD 검증" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+} > "$GRP"; grp_end "큰 diff — 조각 나누기 · 한 파일 넘침 · 생성물 · base 의 .gitattributes · 못 본 파일 다시 · 긴 줄"
 cp "$TMP/plan.keep" "$CORE/$PLANF"   # 뒤 시험은 앞의 계획서 줄(충돌 검증 대기)을 그대로 쓴다
 # merge 커밋은 스테이징 전체를 검사한다(지정 파일만이 아니라) — 충돌 표시가 남은 파일을 미리 스테이징하고 인자에서 빼도 거부
 echo dev3 > "$TMP/dev-side/b.txt" && G -C "$TMP/dev-side" add b.txt && G -C "$TMP/dev-side" commit -q -m dev3 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
@@ -225,6 +243,7 @@ echo side > "$WT/e.txt" && G -C "$WT" add e.txt && G -C "$WT" commit -q -m e
 merge_base >/dev/null
 G -C "$WT" add b.txt; echo more >> "$WT/e.txt"
 OUT="$(commit e.txt)"; CODE=$?
+{
 expect "merge 커밋 — 지정하지 않은 스테이징 파일(b.txt)에 충돌 표시가 남았으면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 결과에 충돌 표시" && echo "$OUT" | grep -q "b.txt"' "$OUT"
 # 충돌을 지금 브랜치 내용으로 풀어 HEAD 와 차이가 없는 merge 결과도 merge 커밋이 된다 — 파일 없이도 · HEAD 와 같은 파일을 줘도(PR #22 라운드 2)
 # 앞 시험이 실패하며 스테이징한 e.txt(merge 중 실패는 스테이징을 되돌리지 않는다)도 HEAD 로
@@ -238,21 +257,26 @@ OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "
 expect "merge 중이면 파일 없이(-- 만)도 merge 커밋 · base 쪽 f.txt 포함" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ] && git -C "$WT" cat-file -e HEAD:f.txt' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "x" -- 2>&1)"; CODE=$?
 expect "merge 중이 아니면 파일 없는 호출은 거부(사용법)" '[ $CODE = 2 ]' "$OUT"
+} > "$GRP"; grp_end "merge 커밋 — 스테이징 전체 검사 · HEAD 와 같은 결과 · 파일 없이 · merge 아니면 사용법 거부"
 # 충돌로 검증 대기인 PR 의 --auto-push 는 base 를 합친 merge 커밋 하나만(PR #22 라운드 3) — 줄은 지금 충돌 검증 대기(origin/feat/x = MERGE_COMMIT)
 PUSHED_BEFORE="$(git -C "$TMP/origin.git" rev-parse feat/x)"; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
+{
 expect "충돌 검증 대기 — merge 커밋이어도 첫 부모가 origin/feat/x 가 아니면 거절(그 사이 커밋이 더 있음)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "첫 부모가 origin/feat/x 가 아니다" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PUSHED_BEFORE" ]' "$OUT"
 echo g > "$WT/g.txt" && G -C "$WT" add g.txt && G -C "$WT" commit -q -m g
 printf -- '- `%s` feat/x · g · push 안 함\n' "$(git -C "$WT" rev-parse --short HEAD)" >> "$CORE/$PLANF"
 OUT="$(ship)"; CODE=$?
 expect "충돌 검증 대기 — merge 커밋이 아닌 커밋은 거절" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 커밋이 아니다" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PUSHED_BEFORE" ]' "$OUT"
+} > "$GRP"; grp_end "충돌 검증 대기 --auto-push — 첫 부모 다름 · merge 커밋 아님은 거절"
 # .npmrc 토큰 검사 — ${이름} 참조 · 빈 값은 커밋 · 값이 글자 그대로면 거부(PR #22 라운드 3 · 가짜 값)
 printf '//registry.npmjs.org/:_authToken="${NPM_TOKEN}"\n//npm.example.com/:_authToken=\n' > "$WT/.npmrc"
 OUT="$(commit .npmrc)"; CODE=$?
+{
 expect ".npmrc — \${NPM_TOKEN} 참조(따옴표 포함) · 빈 값은 커밋" '[ $CODE = 0 ] && git -C "$WT" cat-file -e HEAD:.npmrc' "$OUT"
 printf '//registry.npmjs.org/:_authToken=fake-not-a-real-token\n' >> "$WT/.npmrc"
 OUT="$(commit .npmrc)"; CODE=$?
 expect ".npmrc — 값이 글자 그대로 적혀 있으면 거부(값은 출력 안 함)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "토큰 값이 글자 그대로" && ! echo "$OUT" | grep -q "fake-not-a-real-token"' "$OUT"
+} > "$GRP"; grp_end ".npmrc — 참조 · 빈 값은 커밋 · 글자 그대로 값은 거부"
 G -C "$WT" checkout -q -- .npmrc
 
 # 완료(done)된 계획서에 이어 올린 PR(2026-10-26 · PR #28 재현) — #27 이 머지돼 계획서가 done 이 된 뒤 같은 계획서에서 새 PR 을 올리면
@@ -283,6 +307,7 @@ echo y1 > "$WTY/y.txt" && G -C "$WTY" add y.txt && G -C "$WTY" commit -q -m y1
 FS1="$(git -C "$WTY" rev-parse HEAD)"
 followup_plan 'done — 자동 — PR #7 이 dev 에 머지됨(2026-10-26 10:30)' "$FS1"; : > "$FLOG"
 OUT="$(fship)"; CODE=$?
+{
 expect "done 계획서에 새 PR(#8) → Status ready_for_review 로 되돌림 · 그 PR · HEAD 가 대기열에" '[ $CODE = 0 ] && grep -q "gh pr create" "$FLOG" && grep -q "^- Status: ready_for_review" "$CORE/$FPLAN" && grep -l "web#8" "$FQUEUE"/*.json 2>/dev/null | xargs grep -lq "$FS1"' "$OUT
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
 rm -f "$FQUEUE"/*.json
@@ -299,6 +324,7 @@ followup_plan 'blocked — 사용자 답 기다림' "$FS3" '- PR: https://github
 OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
 expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 넣음" '[ $CODE = 0 ] && grep -q "^- Status: blocked — 사용자 답 기다림" "$CORE/$FPLAN" && ! ls "$FQUEUE"/*.json >/dev/null 2>&1' "$OUT
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
+} > "$GRP"; grp_end "done 계획서에 이어 올림 — 새 PR · 열린 PR push · blocked 는 그대로"
 
 # PR 끔 레포의 일반 PR 차단 — push 전에 막고(오류에 현재 방식 · --direct-merge 명령, 별도 옵션 이름은 없음), 설정은 실행마다 다시 읽는다
 echo; echo "PR 끔 레포의 일반 PR 차단 (--user-pr)"
@@ -314,6 +340,7 @@ guard_ship_preview() { (cd "$CORE" && env PATH="$FBIN:$PATH" FAKE_LOG="$FLOG" AT
 followup_plan 'in_progress' "$GS1"
 guard_config ', "autoMerge": true, "autoPr": false'; : > "$FLOG"
 OUT="$(guard_ship)"; CODE=$?
+{
 expect "PR 끔 + 일반 PR(--yes) → push 전에 실패 · 현재 방식과 --direct-merge 명령 · 별도 옵션 이름은 적지 않음" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포" && echo "$OUT" | grep -q -- "--direct-merge" && ! echo "$OUT" | grep -q -- "--user-pr" && ! grep -q "gh pr create" "$FLOG" && [ "$(git -C "$TMP/origin.git" rev-parse --verify -q refs/heads/feat/y)" != "$GS1" ]' "$OUT"
 OUT="$(guard_ship_preview)"; CODE=$?
 expect "PR 끔 + 미리보기도 막힌다(자동 변환 없음 — 머지하지 않음)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포" && ! grep -q "gh pr create" "$FLOG" && ! grep -q "^- Auto merge:" "$CORE/$FPLAN"' "$OUT"
@@ -337,6 +364,7 @@ OUT="$(guard_ship --auto-push)"; CODE=$?
 expect "PR 끔 + --auto-push 도 같은 가드(PR 이 없는 레포라 올릴 곳이 없다)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포"' "$OUT"
 OUT="$(guard_ship --repo-agent web-fe)"; CODE=$?
 expect "PR 끔 + --repo-agent(여러 레포 경로)도 일반 PR 이면 막힌다" '[ $CODE != 0 ] && ! grep -q "gh pr create" "$FLOG"' "$OUT"
+} > "$GRP"; grp_end "PR 끔 가드 — 일반 PR · 미리보기 막힘 · --user-pr · 설정 다시 읽기 · autoPr 만 · --auto-push · --repo-agent"
 
 # --auto-push 중 red-check 를 기다리는 사이 설정이 PR 끔으로 바뀌면 실제 push 직전에 다시 막는다(2026-11-01 Codex 리뷰)
 echo g4 > "$WTY/g.txt" && G -C "$WTY" add g.txt && G -C "$WTY" commit -q -m g4
