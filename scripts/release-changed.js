@@ -1,5 +1,7 @@
 // @ts-check
-// 버전 태그 뒤 맥 배포판을 만들지 정한다 — .github/workflows/release.yml 이 태그를 단 다음 부른다(계획서 plans/feature/20261106-릴리스-머지-때-자동-공개와-소개-사이트-자동-반영 D2 · 5절)
+// 버전 태그 뒤 맥 배포판을 만들지 정한다(계획서 plans/feature/20261106-릴리스-머지-때-자동-공개와-소개-사이트-자동-반영 D2 · 5절)
+//   2026-11-26 맥 배포를 손으로만 돌리게 바꿔 워크플로는 이 판정(CLI · decide)을 부르지 않는다 — 배포 전에 손으로 돌려 볼 수 있다.
+//   publishedVersion 은 scripts/release-files.js notes --since published(release-mac.yml Release 본문)가 쓴다
 //   node scripts/release-changed.js [--sha <커밋>]
 //     새 판 = 그 커밋에서 닿는 가장 높은 v* 태그 · 비교 기준 = 공개 레포(athena-studio-releases) latest 의 태그
 //     만든다: 공개판이 없을 때 · 공개판 태그가 이 레포에 없을 때 · 두 태그 사이에 아래 '앱 밖' 이 아닌 파일이 하나라도 바뀌었을 때
