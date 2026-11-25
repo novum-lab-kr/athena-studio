@@ -65,7 +65,7 @@ export const FAST_MAX_ROUNDS = 2
 // 계획서 줄 · 댓글의 라운드 분모 — 빠른 길은 리뷰가 최대 3번(1차 + 2차 + 3차 짧은 리뷰)이라 3으로 적는다(상한 판정은 FAST_MAX_ROUNDS 그대로 · 줄의 분모는 판정에 쓰지 않는다)
 export const FAST_REVIEWS = FAST_MAX_ROUNDS + 1
 export const shownMax = (max, fast = false) => (fast ? FAST_REVIEWS : max)
-// 설정 파일 — 하나라도 바뀌면 넓은 수정(wideChangeVerdict). scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE("전체로 가는" 목록)와 같아야 한다(test/pr-auto-test.sh 가 원문 비교)
+// 설정 파일 — 하나라도 바뀌면 넓은 수정(wideChangeVerdict). scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE("전체로 가는" 목록)와 같아야 한다(test/pr-auto-unit-test.sh 가 원문 비교)
 export const CONFIG_FILE_RE = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.nvmrc|vite\.config\.[a-z]+|pyproject\.toml|pyrightconfig\.json|requirements[^/]*\.txt|\.github\/.+)$|(^|\/)scripts\/verify\//
 // 계획서 1절에 이 말이 있으면 넓은 수정(보안 · 외부 계약 · 데이터에 닿는 일) — 1절(## 1. …)부터 다음 ## 까지만 본다
 export const PLAN_RISK_FLAGS = ['보안', '외부 계약', '데이터']

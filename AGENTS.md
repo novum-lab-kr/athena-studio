@@ -42,7 +42,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 터미널 저장·복원·재접속을 고쳤으면 `test/daemon-reload.test.js` · `test/daemon.test.js`로 화면 내용과 입력 모드(마우스 추적·인코딩 등)를 함께 확인한다. 이전 구현에서 실패·수정 뒤 통과하는 회귀 시험을 남기고, `scope-tests.mjs`의 표준 시험 선택에 포함되는지 확인한다. 격리 화면에서는 재접속 전후 실제 휠 전달도 비교한다(일반 셸·마우스 비사용·기본·SGR 모드). 실제 Claude/Codex 확인은 `docs/development.md`의 재접속 절차를 따르고 격리 실험 결과와 구분한다.
 - `npm test` 는 코어를 보지 않는다. `athena/` 를 고쳤으면 고친 곳에 맞는 코어 검사를 따로(`athena/` 에서):
   - `test/packs-test.sh`(본체 하나 · 약 1분) · `test/requests-test.sh`(사람에게 묻는 요청 · 약 30초) · `test/bodies-test.sh`(여러 본체 · update · 약 2분) · `test/bundle-test.sh`(번들 코어 · 약 1분) — 모두 임시 폴더에서 돌고 지운다(`KEEP=1` 이면 남김)
-  - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
+  - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-*-test.sh` 여덟 개(주제별 · 공통 준비는 `test/_pr-auto-lib.sh` · 각 몇 초~몇 분 · 가짜 리뷰어 · GitHub 를 건드리지 않는다) — `unit`(판정 · 표시 줄 · 대상 · 라벨) · `diff`(큰 diff) · `reviewers`(가짜 리뷰어 실행 · 직접 실행 판정) · `ship`(ship.sh · commit.sh 이어지는 곳) · `merge`(머지 확인 · 알림 · 끊긴 뒤 이어받기) · `rounds`(리뷰 라운드 · 짧은 리뷰 · 옛 줄 읽기) · `direct`(PR 끔 바로 머지 · 리뷰 문 · 보안 문) · `delegate`(지시문). 검증 범위가 헬퍼 · pr-auto 를 따라 골라 준다
   - 머지 뒤 전체 검증(`scripts/full-verify.mjs` · `scripts/lib/full-verify.mjs` — 그림자 · 하루 한 번 · 실패 이슈 · 현황판의 한 시간 타이머 · pr-auto 의 머지 뒤 띄우기)을 고쳤으면 `test/full-verify-test.sh`(몇 초 · 임시 코어 사본 · 임시 git 레포 · 가짜 검증 스크립트)
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
   - 끝난 에이전트 pane 자동 닫기(`scripts/board/pane-close.mjs` · `server.mjs` `closeFinishedPanes`)를 고쳤으면 `test/board-pane-close-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 · 판정 함수는 `board-auto-test.sh`)
@@ -76,7 +76,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 위임 에이전트 훅 설정(`athena/scripts/lib/agent_hooks.py` — `agent-context.py` · `delegate.sh` 가 같이 쓴다)을 고쳤으면 `test/agent-hooks-test.sh`(몇 초)
   - 위임 에이전트를 띄우기 전 워크트리 폴더 믿음 미리 적기(`athena/scripts/lib/claude_trust.py` — `delegate.sh` 가 Claude 일 때 부른다 · `~/.claude.json` `projects.<워크트리 실제 경로>.hasTrustDialogAccepted`)를 고쳤으면 `test/claude-trust-test.sh`(몇 초 · 가짜 HOME · 진짜 claude 를 부르지 않는다)
   - `commit.sh` 의 미리 올린 변경 판정(이름 바꾸기 포함)을 고쳤으면 `test/commit-staged-test.sh`(몇 초 · 임시 레포)
-  - `pr-auto.mjs` · `learn-review.mjs` 의 직접 실행 판정(`scripts/lib/is-main.mjs`)은 `test/pr-auto-test.sh` 끝의 심볼릭 링크 검사가 본다
+  - `pr-auto.mjs` · `learn-review.mjs` 의 직접 실행 판정(`scripts/lib/is-main.mjs`)은 `test/pr-auto-reviewers-test.sh` 끝의 심볼릭 링크 검사가 본다
   - 자세한 것은 `athena/docs/pack.md` "여러 팩 테스트"
 
 ## 고칠 때 같이 바꾸는 곳
