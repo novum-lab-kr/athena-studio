@@ -49,7 +49,7 @@ if args[:2]==['pane','get']:
     first=not (root/'identified').exists()
     (root/'identified').touch()
     if not first:
-        deadline=time.monotonic()+5
+        deadline=time.monotonic()+30
         while not (root/'poll-allowed').exists():
             if time.monotonic()>deadline: sys.exit(1)
             time.sleep(0.01)
@@ -81,13 +81,15 @@ clock=pathlib.Path(os.environ['TEST_CLOCK']);clock.write_text(str(int(clock.read
         process = subprocess.Popen(['bash', str(body/'scripts/review-result.sh'), '--plan', 'plans/task/test.md',
                                     '--dir', str(repo), '--verdict', '승인'], env=env, start_new_session=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate(timeout=10)
+        stdout, stderr = process.communicate(timeout=30)
         if cleanup:
             # 방금 만든 실행 그룹만 정리한다. 새 세션으로 분리된 감시는 이 그룹에 속하지 않는다.
             try: os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError: pass
         (case/'poll-allowed').touch()
-        deadline = time.monotonic()+5
+        # 맥이 바쁘면 감시가 가짜 시계 60초(13바퀴 · 바퀴마다 python 4번)를 채우는 데 실제로 몇 초를 넘긴다(2026-11-25 실측:
+        # 5초 한도에서 12~15바퀴째에 끊겨 closed 가 없었다). 한도는 넉넉히 · 닫히면 바로 넘어가니 통과할 때 시간은 그대로다
+        deadline = time.monotonic()+30
         while not (case/'closed').exists() and time.monotonic()<deadline:
             if states[-1]=='gone' and (case/'polls').exists(): break
             if '🧹' not in stdout: break
@@ -97,12 +99,20 @@ clock=pathlib.Path(os.environ['TEST_CLOCK']);clock.write_text(str(int(clock.read
         (case/'stdout').write_text(stdout)
         return case
 
+    # 기다려도 안 닫혔으면 오류로 멈추지 않고 ✖ 로 적고 다음 사례로 — 어디까지 갔는지 한 줄 남긴다
+    def closed_at(case):
+        path = case/'closed'
+        if path.exists(): return path.read_text()
+        polls = case/'polls'
+        print(f"    {case.name}: closed 없음 — 감시 {polls.read_text() if polls.exists() else 0}바퀴 · 가짜 시계 {(case/'clock').read_text()}", flush=True)
+        return None
+
     normal = run('Claude와 같은 일반 실행', ['idle'])
-    check('기본 정책 — 60초 연속 idle 뒤 닫는다', (normal/'closed').read_text()=='160')
+    check('기본 정책 — 60초 연속 idle 뒤 닫는다', closed_at(normal)=='160')
     detached = run('Codex 명령 그룹 정리 재현', ['idle'], cleanup=True)
     check('명령 반환 후 그룹을 정리해도 감시는 살아남아 닫는다', (detached/'closed').exists())
     reset = run('작업·선택 대기 중 시간 초기화', ['idle','idle','working','idle','waiting','idle'])
-    check('working·waiting 때 다시 세고 마지막 idle부터 60초', (reset/'closed').read_text()=='185')
+    check('working·waiting 때 다시 세고 마지막 idle부터 60초', closed_at(reset)=='185')
     ordinary = run('일반 pane 제외', ['idle'], label='🤖 fe · test')
     check('reviewer 이름표가 아니면 닫지 않는다', not (ordinary/'closed').exists())
     disabled = run('자동 닫기 끔', ['idle'], enabled='0')
