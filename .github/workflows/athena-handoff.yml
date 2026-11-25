@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 env:
   BASE_BRANCH: main
-  DEPLOY_WORKFLOW: release.yml # 기본 토큰으로 머지하면 release.yml 의 push 가 걸리지 않아 직접 부른다 — 버전 태그 · Release
+  DEPLOY_WORKFLOW: release.yml # 기본 토큰으로 머지하면 release.yml 의 push 가 걸리지 않아 직접 부른다 — 버전 태그 · Release(맥 배포 release-mac 은 손으로만)
 jobs:
   verify:
     if: github.event.deleted == false && github.event.repository.fork == false

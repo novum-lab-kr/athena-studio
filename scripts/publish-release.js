@@ -5,7 +5,7 @@
 //   node scripts/publish-release.js --run <release-mac 실행 id> [--dry-run]
 //   node scripts/publish-release.js --from <이미 받은 artifact 폴더> [--dry-run] [--allow-unstapled]
 //     --allow-unstapled: .dmg 에 staple 을 끝내 못 붙여도 경고만 남기고 올린다(D3) — Actions(GITHUB_ACTIONS=true)에서만 받는다
-//     1. 실행 확인 — release-mac 워크플로 · main 이나 버전 태그(release.yml 이 태그로 부른다) · 끝남 · 성공(--run 일 때)
+//     1. 실행 확인 — release-mac 워크플로 · main 이나 버전 태그(손으로 부를 때 --ref v<태그> 또는 main) · 끝남 · 성공(--run 일 때)
 //     2. artifact Athena-Studio-mac 받기(gh run download) → .dmg 2 · .zip 2 · latest.json · latest-mac.yml · release-notes.md
 //        받은 폴더(tmpdir/athena-studio-release-*)는 끝나면 지운다 — 올렸든 · --dry-run 이든 · 실패했든(--from 폴더는 그대로)
 //     3. 다시 확인 — 이름 · 크기 · sha256 을 latest.json 과 맞추고 version · date · minMacOS 모양.
@@ -14,7 +14,7 @@
 //          stapler validate 가 이미 통과면 그대로 · 아니면 staple(티켓만 받는다 — 자격 증명 필요 없음) → validate →
 //          spctl 이 'accepted · Notarized Developer ID' 여야 올린다. staple 로 파일이 바뀌면 latest.json 의 size · sha256 을 다시 쓴다
 //          .zip 안 .app 은 CI 에서 못 붙였으면 그대로 올리고 알린다(손님 맥이 처음 켤 때 온라인으로 공증을 확인한다)
-//     4. 공개 레포 latest 가 이번 버전과 같거나 높으면 올리지 않고 끝낸다(한 줄 · 머지가 몰려 순서가 뒤집힐 때)
+//     4. 공개 레포 latest 가 이번 버전과 같거나 높으면 올리지 않고 끝낸다(한 줄 · 옛 판 태그로 잘못 불렀을 때)
 //        같은 태그(Release · 초안 · git 태그)가 이미 있으면 멈춘다 — 덮지 않는다
 //     5. --dry-run 이면 여기까지 하고 올릴 명령만 찍는다
 //     6. gh release create v<버전> --draft(파일 6개 · 본문 release-notes.md) → 다 올라가면 공개 · --latest
