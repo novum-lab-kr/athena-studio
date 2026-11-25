@@ -206,9 +206,10 @@ export function createMobileRelay(deps: RelayDeps) {
     await Promise.all(
       targets.map((peer) => {
         const pushKey = mobileCrypto.keyFrom(state.peers[peer]?.pushKey)
-        const enc = pushKey ? sealPush(pushKey, { t: event.title, b: event.body, k: kind, ...(event.pane ? { p: event.pane } : {}) }) : null
+        const enc = pushKey ? sealPush(pushKey, { t: event.title, b: event.body, k: kind, ...(event.pane ? { p: event.pane } : {}), ...(event.server ? { s: event.server } : {}) }) : null
         const sealed = enc ? 'enc' : `plain:${pushKey ? 'seal_failed' : 'no_key'}`
-        return call('push.send', { to: peer, kind, id, ...(enc ? { enc } : {}) }).then(
+        // collapse — 서버 알림만(relay 가 Expo collapseId 로만 쓴다 · 로그에 남기지 않는다)
+        return call('push.send', { to: peer, kind, id, ...(enc ? { enc } : {}), ...(event.collapse ? { collapse: event.collapse } : {}) }).then(
           () => log(`[mobile-relay] ${sent} peer=${peer} kind=${kind} id=${id} ${sealed}`),
           (error) => log(`[mobile-relay] ${failed} peer=${peer} kind=${kind} id=${id} ${sealed} code=${(error as RelayCallError).code}`),
         )
@@ -656,7 +657,7 @@ export function createMobileRelay(deps: RelayDeps) {
       }
       return true
     },
-    // 폰 푸시(protocol.md "푸시" · push.send {to, kind, enc?, id}) — 허용한 기기 중 지금 붙어 있지 않은 것(relay 세션 없음 · busy 에 없음 — 직접 길)마다 한 번.
+    // 폰 푸시(protocol.md "푸시" · push.send {to, kind, enc?, id, collapse?} — kind 는 request · done · server) — 허용한 기기 중 지금 붙어 있지 않은 것(relay 세션 없음 · busy 에 없음 — 직접 길)마다 한 번.
     // 글(제목 · 본문)과 그 푸시를 낸 pane id(알 때만)는 그 기기 푸시 열쇠로 봉인해 enc 에(athena-push v1 · push-crypto.mts — relay 는 pane 을 모른다) — 열쇠가 없는 기기 · 봉인 실패는 enc 없이(relay 고정 문구) · 로그에 까닭을 가른다(plain:no_key · plain:seal_failed).
     // relay 에 붙어 있지 않으면 보내지 않는다 · 실패(no_push_token · not_paired · rate_limited · push_failed …)는 코드만 남기고 다시 보내지 않는다(같은 건은 한 번)
     push: (event: PushEvent, busy: readonly string[] = []): Promise<void> =>

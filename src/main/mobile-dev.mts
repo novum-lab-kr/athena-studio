@@ -536,6 +536,12 @@ export function startMobileDev(deps: DevDeps) {
       if (ctx !== front()) return
       sendPush(pushFor(ctx).panes(panes, Date.now(), gate))
     },
+    // 서버 문제 · 회복(src/main/server-alert.mts — 맥 알림과 같은 사건) — 앞 창과 상관없이 본체마다. 다른 폰 푸시와 같이 거른다(메뉴 막대 [알림 끄기] · 맥 앞에 사람이 있음)
+    // relay 가 아직 kind:'server' 를 모르면 bad_request — 로그에 코드만 남고 맥 알림은 이미 나갔다
+    serverAlerts: (events: readonly PushEvent[], gate: PushGate) => {
+      if (gate.muted || gate.active) return
+      sendPush([...events])
+    },
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
       stopped = true

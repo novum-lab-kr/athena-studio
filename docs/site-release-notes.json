@@ -6,6 +6,13 @@
       "ko": "배포판 맥 앱에 폰 연결 추가 — 운영 relay 전용",
       "ja": "配布版 Mac アプリにスマホ接続を追加 — 本番 relay のみ",
       "zh": "发布版 Mac 应用新增手机连接 — 仅限正式 relay"
+    },
+    {
+      "tag": "new",
+      "en": "Add server problem alerts — Mac notification and phone push, checked every 5 minutes",
+      "ko": "서버 문제 알림 추가 — 맥 알림 · 폰 푸시 · 5분마다 확인",
+      "ja": "サーバー問題の通知を追加 — Mac 通知・スマホプッシュ・5分ごとに確認",
+      "zh": "新增服务器问题通知 — Mac 通知和手机推送 · 每 5 分钟检查"
     }
   ],
   "0.71": [

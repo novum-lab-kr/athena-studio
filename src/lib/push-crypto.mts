@@ -3,7 +3,8 @@
 //   일회 X25519 열쇠 e → shared = X25519(e, pushPub) → key = HKDF-SHA256(shared, salt = ePub ‖ pushPub, info = 'athena-push v1', 32B)
 //   → ChaCha20-Poly1305(평문, nonce 12B 난수, AAD = 'athena-push v1')
 //   enc = base64url( 0x01 ‖ ePub 32B ‖ nonce 12B ‖ 암호문 ‖ tag 16B )
-// 평문 = JSON {"t":"<제목>","b":"<본문>","k":"request|done"} — 글 자르기는 만드는 쪽(push-model.mts).
+// 평문 = JSON {"t":"<제목>","b":"<본문>","k":"request|done|server"} — 글 자르기는 만드는 쪽(push-model.mts · 서버는 server-alert.mts).
+//   서버 알림(k = server)이면 "s":"<서버 이름>" 한 칸 더(폰이 알림을 누르면 그 서버로)
 //   그 푸시를 낸 pane 을 알면 끝에 "p":"<pane id>" 한 칸(폰이 알림을 누르면 그 pane 으로 간다 — relay 는 모른다) · 모르면 칸이 없다
 // X25519 · HKDF 는 node:crypto, AEAD 만 libsodium(IETF ChaCha20-Poly1305 — 결과 바이트는 node:crypto 와 같다):
 //   Electron(BoringSSL)의 node:crypto 에는 chacha20-poly1305 가 없어 createCipheriv 가 던진다(시스템 node 에서는 된다 — 2026-11-20 실측 · Electron 44).
@@ -20,7 +21,8 @@ const NONCE_BYTES = 12
 // X25519 비밀 열쇠 raw 32B 앞에 붙는 PKCS#8 머리(RFC 8410)
 const PKCS8_X25519 = Buffer.from('302e020100300506032b656e04220420', 'hex')
 
-export type PushText = { t: string; b: string; k: 'request' | 'done'; p?: string }
+// s — 서버 알림(k = server)의 서버 이름(팩 servers[].name · 주소가 아니다)
+export type PushText = { t: string; b: string; k: 'request' | 'done' | 'server'; p?: string; s?: string }
 // 시험용 — 고정 일회 비밀 열쇠 · nonce(교차 시험 벡터). 실제로는 넘기지 않는다(매번 새로 뽑는다)
 export type SealFixed = { ephemeralPrivate?: Uint8Array; nonce?: Uint8Array }
 
@@ -44,7 +46,7 @@ export function sealPush(pushPublic: Uint8Array, text: PushText, fixed: SealFixe
     const salt = Buffer.concat([ephemeralPublic, Buffer.from(pushPublic)])
     const key = Buffer.from(crypto.hkdfSync('sha256', shared, salt, PUSH_INFO, KEY_BYTES))
     const nonce = fixed.nonce ? Buffer.from(fixed.nonce) : crypto.randomBytes(NONCE_BYTES)
-    const plain = Buffer.from(JSON.stringify({ t: text.t, b: text.b, k: text.k, ...(text.p ? { p: text.p } : {}) }), 'utf8')
+    const plain = Buffer.from(JSON.stringify({ t: text.t, b: text.b, k: text.k, ...(text.p ? { p: text.p } : {}), ...(text.s ? { s: text.s } : {}) }), 'utf8')
     // 암호문 ‖ tag 16B
     const sealed = sodium.crypto_aead_chacha20poly1305_ietf_encrypt(plain, PUSH_INFO, null, nonce, key)
     const enc = Buffer.concat([Buffer.from([PUSH_VERSION]), ephemeralPublic, nonce, sealed]).toString('base64url')

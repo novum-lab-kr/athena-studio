@@ -36,6 +36,7 @@ import { createCoreRunner, changelogFile, changelogVersionsFile } from './main/c
 import { installDaemonLink } from './main/daemon-link.mts'
 import { installWorkspaces } from './main/workspaces.mts'
 import { installServerStatus } from './main/server-status.mts'
+import { setupServerAlerts } from './main/server-alert.mts'
 import { installSshSetup } from './main/ssh-setup.mts'
 import type { SshKey } from './main/ssh-setup.mts'
 import type { HostInput } from './lib/ssh-config.mts'
@@ -512,8 +513,8 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     return choice.response === 0 ? 'claude' : choice.response === 1 ? 'codex' : null
   } })
   installPackRepos(ctx, { say, runPack, daemonPaths })
-  // 서버 탐색기 · 서버 목록(pack.json servers)
-  installServerStatus(ctx)
+  // 서버 탐색기 · 서버 목록(pack.json servers) — 실제로 읽을 때마다 서버 문제 알림 판정(src/main/server-alert.mts)
+  installServerStatus(ctx, { onRead: (reply) => serverAlerts.read(ctx, reply) })
   installSshSetup(ctx, { dialog })
   // 요청 목록은 이 창 변수 그대로 — pane [상세] 도 읽는다
   let requestsState: RequestsState = { supported: false, requests: [], error: null }
@@ -695,6 +696,16 @@ const { createTray, refreshTray, sendTrayUpdate, pollTray, trayRequestsChanged, 
   // 맥 알림과 같은 거르기([알림 끄기] · 지금 보는 pane)를 같이 넘긴다
   onPanes: (ctx, panes, gate) => {
     if (mobileDev) mobileDev.panesPolled(ctx as unknown as Parameters<NonNullable<MobileDev>['panesPolled']>[0], panes, gate)
+  },
+})
+
+// ── 서버 문제 알림 — 맥 알림 · 폰 푸시(칸이 닫혀 있어도 5분마다 읽기) — src/main/server-alert.mts ──
+const serverAlerts = setupServerAlerts({
+  say,
+  packWindows,
+  gate: () => pushGate(),
+  push: (events, gate) => {
+    if (mobileDev) mobileDev.serverAlerts(events, gate)
   },
 })
 
@@ -1207,6 +1218,7 @@ app.whenReady().then(async () => {
   checkAppUpdate()
   setInterval(checkAppUpdate, APP_UPDATE_CHECK_MS)
   startPanesPolling()
+  serverAlerts.start()
   // 메뉴 막대는 맥에서만(다른 OS 는 숨은 패널 창이 남아 창을 닫아도 앱이 안 꺼진다)
   if (isMac) createTray()
   app.on('activate', () => showWindow())

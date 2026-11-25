@@ -332,6 +332,9 @@ declare global {
     // 서버 줄 우클릭 — open-server · remove-server · null
     serverContextMenu(point: { x: number; y: number }): Promise<string | null>
     serverStatus(): Promise<ServerStatusReply>
+    // 뒤에서 읽은 서버 상태(src/main/server-alert.mts) · 서버 알림을 눌렀다(서버 이름)
+    onServerRead(callback: (reply: ServerStatusReply) => void): () => void
+    onServerOpen(callback: (name: string) => void): () => void
     packAddRepo(dir: string, name: string | null): Promise<RepoAddReply>
     // 팩 설정 전 레포 추가 창의 [팩 설정 시작] — 아테나 pane 에 첫 실행 지시(고른 레포가 있는 폴더를 레포 폴더로) · 아테나 pane 이 없으면 ok: false
     packStartSetup(dir: string): Promise<{ ok: boolean }>

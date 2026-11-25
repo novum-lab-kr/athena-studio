@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add phone connection to the released Mac app — production relay only
+- Add server problem alerts — Mac notification and phone push, checked every 5 minutes
 
 ### Fixed
 - Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent
