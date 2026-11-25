@@ -35,6 +35,28 @@ def headless_claude() -> bool:
     return os.environ.get('CLAUDE_CODE_ENTRYPOINT', '').startswith('sdk')
 
 
+def closed_lead_heir(pane: str):
+    """담당 아테나가 닫힌 계획서의 끝난 작업을 이 pane 이 대신 집어도 되는가를 답하는 함수(H9 · lead-send.py floating_leads 와 같은 판정 —
+    이 pane 이 claude · codex · cwd 가 본체 · 위임 이름표 🤖 아님). pane 목록은 처음 물을 때 한 번만 읽고, 못 읽으면 대신 집지 않는다"""
+    seen = {}
+
+    def heir(owner: str) -> bool:
+        if 'panes' not in seen:
+            try:
+                seen['panes'] = screen.get_backend().list_panes(timeout=5)
+            except Exception:
+                seen['panes'] = None
+        panes = seen['panes']
+        if panes is None or any(str(row.get('id') or '') == owner for row in panes):
+            return False
+        me = next((row for row in panes if str(row.get('id') or '') == pane), None)
+        if not me or me.get('agent') not in ('claude', 'codex') or not me.get('cwd'):
+            return False
+        name = str(me.get('label') or me.get('name') or me.get('pane_title') or '')
+        return not name.startswith('🤖') and os.path.realpath(str(me.get('cwd'))) == str(ATHENA_DIR)
+    return heir
+
+
 DONE_HEAD = '맡은 작업 중 끝난 것(이 pane 에 따로 넣지 않은 끝 알림 — 사용자가 물으면 이 요약과 계획서 Checkpoint 로 답하고 pane 화면을 다시 읽지 않는다):'
 
 
@@ -74,7 +96,7 @@ def main() -> None:
             pass
         try:
             # 맡은 계획서(Lead pane 이 이 pane)의 끝난 작업 — 아테나 pane 에 넣지 않은 끝 줄을 이 입력에 한 줄씩 붙인다(깨우지 않고도 알게 · 토큰 절감 F1)
-            done = agent_turn.take_done_notices(pane, plan_lead)
+            done = agent_turn.take_done_notices(pane, plan_lead, closed_lead_heir(pane))
             if done:
                 notice = '\n'.join(filter(None, [notice, DONE_HEAD, *done]))
         except Exception:

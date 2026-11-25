@@ -19,6 +19,9 @@ printf '%s' "$INSTR_OUT" | grep -q "ship.sh --plan $ICORE/plans/task/20261030-a.
 INSTR_OUT="$(instr ', "autoMerge": true')"
 printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다" && ! printf '%s' "$INSTR_OUT" | grep -q -- "--direct-merge" \
   && echo "  ✔ 자동 PR 켬 → 지금처럼 PR 흐름" || { echo "  ✖ 켬 지시문"; FAIL=1; }
+# 경량 계획서(plans/task/)도 넓은 수정이면 묻지 않고 리뷰(H8 · 2026-11-26) — "리뷰할까요?" 를 묻는 옛 지시가 없어야 한다
+printf '%s' "$INSTR_OUT" | grep -q "pr-auto.mjs --wide --plan plans/task/20261030-a.md --dir <워크트리> 로 넓은 수정인지 본다" && printf '%s' "$INSTR_OUT" | grep -q "'넓은 수정: 예' 면 묻지 않고 바로 리뷰를 띄우고" && printf '%s' "$INSTR_OUT" | grep -q "로직이 하나라도 바뀌었으면 no 를 적지 않고, no 를 적었으면 끝 요약에 그 이유를 한 줄" && ! printf '%s' "$INSTR_OUT" | grep -q "리뷰할까요" \
+  && echo "  ✔ 경량 계획서도 --wide 판정이 예면 자동 리뷰 지시" || { echo "  ✖ 경량 리뷰 지시문"; printf '%s\n' "$INSTR_OUT" | grep -o "넓은 수정인지.\{0,160\}" | head -2; FAIL=1; }
 # autoMerge 키가 없으면 저절로 흐름 지시가 없다 — autoPr:false 만 있어도 같다(바로 머지 안 함)
 LOOSE=""
 for piece in '' ', "autoPr": false'; do

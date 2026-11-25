@@ -312,6 +312,11 @@ def _turn_id(pane):
     return str(agent_turn.read_turn(pane).get('turn') or '')
 
 
+def _turn_state(pane):
+    import agent_turn
+    return str(agent_turn.read_turn(pane).get('state') or '')
+
+
 def wait_start(pane, before, seconds=None):
     import agent_turn
     if agent_turn.pack_state() is None:
@@ -409,7 +414,7 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
   pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음)
-  pane send-text <pane> <글> [--enter [--wait-start]](글 뒤 Enter 까지 · --wait-start 는 받은 에이전트가 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄)
+  pane send-text <pane> <글> [--enter [--wait-start]](글 뒤 Enter 까지 · --wait-start 는 받은 에이전트가 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄 · 일하는 중이면 기다리지 않고 queued)
   pane wait-start <pane> [--timeout MS]        방금 띄운 에이전트 pane 이 첫 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄
   pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
@@ -462,16 +467,18 @@ def _need(positional, count, what):
     return positional
 
 
-def _mine(panes, lead):
+def _mine(panes, lead, unowned=None):
     """부른 아테나 pane(lead)이 맡은 계획서에 묶인 pane 만 — pane 기록(state/pane-sessions/<pane>.json)의 plan 이 가리키는 계획서의
     "- Lead pane:" 이 lead 인 것. pane 마다 plan(계획서) · turn(차례 상태 working · done · asking … — scripts/lib/agent_turn.py)을 붙인다.
-    아테나 창이 여럿일 때 다른 아테나의 pane 을 읽지 않게(토큰 절감 F3). 팩 데이터가 없거나 부른 pane 을 모르면 []"""
+    아테나 창이 여럿일 때 다른 아테나의 pane 을 읽지 않게(토큰 절감 F3). 팩 데이터가 없거나 부른 pane 을 모르면 [].
+    unowned(list)를 주면 담당 없는 pane — 계획서 Lead pane 이 비었거나 지금 없는 pane 인 것 — 을 거기에 담는다(어느 아테나의 목록에도 안 나오는 것을 놓치지 않게 · H4)"""
     import re
     import agent_turn
     base = agent_turn.pack_state()
     if base is None or not lead:
         return []
     found = []
+    alive = {pane['id'] for pane in panes}
     for pane in panes:
         try:
             plan = str(json.loads((base / 'pane-sessions' / f'{pane["id"]}.json').read_text(encoding='utf-8')).get('plan') or '')
@@ -486,13 +493,15 @@ def _mine(panes, lead):
             continue
         if owner and owner.group(1) == lead and pane['id'] != lead:
             found.append({**pane, 'plan': plan, 'turn': str(agent_turn.read_turn(pane['id']).get('state') or '')})
+        elif unowned is not None and pane['id'] != lead and (not owner or owner.group(1) not in alive):
+            unowned.append({**pane, 'plan': plan, 'turn': str(agent_turn.read_turn(pane['id']).get('state') or '')})
     return found
 
 
-def _filter_panes(screen, panes, flags):
+def _filter_panes(screen, panes, flags, unowned=None):
     me = screen.self_info()
     if flags.get('--mine'):
-        panes = _mine(panes, me.get('pane_id') or '')
+        panes = _mine(panes, me.get('pane_id') or '', unowned)
     resolve = lambda value, key: me[key] if value == 'self' else value  # noqa: E731
     if '--tab' in flags:
         panes = [p for p in panes if p['tab_id'] == resolve(flags['--tab'], 'tab_id')]
@@ -535,7 +544,11 @@ def _dispatch(screen, words, flags, positional, raw_rest):
     if op == 'pane current':
         return {'pane': screen.pane_current()}, 0
     if op == 'pane list':
-        return {'panes': _filter_panes(screen, screen.list_panes(), flags)}, 0
+        unowned = []
+        result = {'panes': _filter_panes(screen, screen.list_panes(), flags, unowned)}
+        if unowned:
+            result['unowned'] = unowned   # --mine 일 때만 — 담당 없는 pane(H4)
+        return result, 0
     if op == 'pane get':
         return {'pane': screen.get_pane(_need(positional, 1, 'pane')[0])}, 0
     if op == 'pane is-shell':
@@ -573,9 +586,17 @@ def _dispatch(screen, words, flags, positional, raw_rest):
             return None, 0
         before = _turn_id(raw_rest[0]) if len(tail) == 2 else ''
         # 데몬의 전송 확인 · 재시도와 pane run 이 같은 길을 쓴다. 글은 한 인자로 그대로.
-        screen.run(raw_rest[0], [raw_rest[1]])
+        busy = len(tail) == 2 and _turn_state(raw_rest[0]) == 'working'
+        try:
+            screen.run(raw_rest[0], [raw_rest[1]])
+        except ScreenError as error:
+            # 일하는 중인 pane 은 글이 대기열에 들어가 입력칸이 안 비워진다 — 데몬은 전송 확인을 못 해 timeout 을 낸다(2026-11-26 실측 · 3초).
+            # 받은 쪽은 차례 중간에 그 글을 받으니 오류가 아니라 queued 로 답한다(H5)
+            if not busy or 'timeout' not in f'{error.code} {error.stdout} {error.stderr}':
+                raise
+            return {'text': 'queued\n'}, 0
         if len(tail) == 2:
-            return {'text': wait_start(raw_rest[0], before) + '\n'}, 0
+            return {'text': ('queued' if busy else wait_start(raw_rest[0], before)) + '\n'}, 0
         return None, 0
     if op == 'pane wait-start':
         # 방금 띄운 pane 이 첫 지시를 받아 차례를 시작했는지(delegate.sh) — 보내기 전 차례가 없으니 차례가 생기면 started
@@ -625,6 +646,11 @@ def _print(result, fmt):
         for item in next((value for value in result.values() if isinstance(value, list)), []):
             words = [item.get('id'), item.get('label'), item.get('turn') or item.get('agent_status'), item.get('plan')]
             sys.stdout.write(' · '.join(str(word) for word in words if word) + '\n')
+        unowned = result.get('unowned') or []
+        if unowned:
+            sys.stdout.write(f'담당 없음 {len(unowned)}개(계획서 Lead pane 이 비었거나 닫힌 pane)\n')
+            for item in unowned:
+                sys.stdout.write(' · '.join(str(word) for word in [item.get('id'), item.get('label'), item.get('turn') or item.get('agent_status'), item.get('plan')] if word) + '\n')
     elif fmt in ('id', 'ids'):
         if 'text' in result:
             sys.stdout.write(result['text'])

@@ -218,10 +218,46 @@ def plan_agents(plan_text: str) -> set:
     return {name for name in names for row in rows if re.search(rf'(?<![\w-]){re.escape(name)}(?![\w-])', row)}
 
 
-def quiet_done(agent: str, plan_text: str, fields: dict, stop: str, question: bool, summary: list) -> bool:
+# 형식(⏸ 멈춤 · 끝 물음표) 없이 답을 기다리는 말 — 있으면 조용한 끝으로 돌리지 않는다(H1 · 묻힌 물음을 아테나가 놓치지 않게)
+NEEDS_ANSWER = re.compile(r'답이\s*필요|알려\s*주|확인\s*필요|진행할지|정해\s*주')
+
+
+def pane_alive(pane: str) -> bool:
+    try:
+        screen.get_backend().get_pane(pane)
+        return True
+    except Exception:
+        return False
+
+
+def board_up() -> bool:
+    """현황판 서버가 떠 있나 — 맥 알림 · 카드 알약은 앱이 현황판 상태를 읽어 띄운다(꺼져 있으면 조용한 끝이 어디에도 안 보인다 · H7). 포트에 붙어 보기만 한다"""
+    try:
+        import socket
+        from athena_config import board_port
+        with socket.create_connection(('127.0.0.1', board_port(str(ATHENA_DIR))), timeout=0.5):
+            return True
+    except (Exception, SystemExit):
+        return False
+
+
+def security_high(plan_text: str) -> bool:
+    """계획서의 마지막 "- Security result:" 줄이 높음 1 이상인가"""
+    lines = [line for line in plan_text.splitlines() if line.startswith('- Security result:')]
+    found = re.search(r'높음\s*(\d+)', lines[-1]) if lines else None
+    return bool(found) and int(found.group(1)) > 0
+
+
+def quiet_done(agent: str, plan_text: str, fields: dict, stop: str, question: bool, summary: list, reply: str = '') -> bool:
     """이 끝 줄을 아테나 pane 대신 맥 알림 · 현황판 카드로 돌려도 되나(C1). 판정을 못 하면 False — 지금처럼 아테나로"""
     if stop or question or not summary or agent in REVIEWERS or fields.get('status') == 'blocked':
         return False
+    if NEEDS_ANSWER.search(reply or ''):
+        return False   # H1
+    if not pane_alive(str(fields.get('lead') or '')):
+        return False   # H2 담당 아테나가 닫혔다 — lead-send 가 떠 있는 아테나에게 넘긴다(F4)
+    if not board_up():
+        return False   # H7
     try:
         return len(plan_agents(plan_text)) == 1
     except (Exception, SystemExit):   # 설정을 못 읽으면 athena_config.load 가 sys.exit 한다 — 끝 알림까지 끊기지 않게
@@ -479,12 +515,15 @@ def main() -> None:
         pass
     if initial.get('skip') or not plan:
         return  # 시작 안내 · 아테나의 끝 알림 답으로 시작한 차례는 알리지 않는다
-    if agent in REVIEWERS and not stop and not question and os.environ.get('ATHENA_REVIEW_FROM_AGENT') == '1':
-        return  # 에이전트 pane 이 띄운 reviewer 의 끝 줄(C2) — 결론은 계획서 줄 · 띄운 작업자가 review-wait.sh 로 받는다
     try:
         plan_text = (ATHENA_DIR / plan).read_text(encoding='utf-8')
     except OSError:
         return
+    if agent in REVIEWERS and not stop and not question and os.environ.get('ATHENA_REVIEW_FROM_AGENT') == '1':
+        # 에이전트 pane 이 띄운 reviewer 의 끝 줄(C2) — 결론은 계획서 줄 · 띄운 작업자가 review-wait.sh 로 받는다.
+        # 예외: 보안 검토가 높음 1 이상이면 아테나로 보낸다
+        if not (agent == 'security-reviewer' and security_high(plan_text)):
+            return
     fields = plan_fields(plan_text)
     lead = fields['lead']
     if not PANE_ID.match(lead) or lead == pane:
@@ -493,7 +532,7 @@ def main() -> None:
     line = notice_line(agent, pane, plan, fields, stop, background, question)
     message = with_summary(line, reply)
     summary = summary_lines(reply)
-    quiet = quiet_done(agent, plan_text, fields, stop, question, summary)
+    quiet = quiet_done(agent, plan_text, fields, stop, question, summary, reply)
     with pane_lock(state_path.parent, pane):
         state = load_json(state_path)
         if not state.get('turn') or state.get('skip'):

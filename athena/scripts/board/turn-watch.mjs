@@ -170,12 +170,14 @@ export const reconcileTurns = async ({ stateDir, plans, panes, now, menuOf, noti
     }
   }
 
-  // 닫힌 pane 의 오래된 차례 상태
+  // 닫힌 pane 의 오래된 차례 상태 — 맡은 아테나가 아직 안 집은 조용한 끝 알림(done_notice 가 shown 아님 · done_missed)이 남은 파일은 두고(H9 —
+  // 카드 · 트레이는 살아 있는 pane 만 보여서 이 파일이 마지막 길이다 · 아테나 입력 훅 take_done_notices 가 집으면 그다음 바퀴에 지워진다)
   if (existsSync(turnDir)) {
     for (const name of readdirSync(turnDir)) {
       if (!name.endsWith('.json') || alive.has(name.replace(/\.json$/, ''))) continue
       const turn = readJson(join(turnDir, name))
-      if (!turn || now - Number(turn.ts || 0) * 1000 > KEEP_MS) rmSync(join(turnDir, name), { force: true })
+      const unseen = turn && ((turn.done_notice && typeof turn.done_notice === 'object' && !turn.done_notice.shown) || (Array.isArray(turn.done_missed) && turn.done_missed.length > 0))
+      if (!turn || (!unseen && now - Number(turn.ts || 0) * 1000 > KEEP_MS)) rmSync(join(turnDir, name), { force: true })
     }
   }
 }

@@ -109,10 +109,31 @@ def keep_missed(pane: str) -> list:
     return missed[-10:]
 
 
-def take_done_notices(lead: str, lead_of) -> list:
+def take_done_notices(lead: str, lead_of, heir=None) -> list:
     """아테나 pane(lead)이 맡은 계획서의 조용한 끝 알림 중 아직 안 보인 것 — "<끝 줄> — 요약: …" 줄 목록. 돌려준 것은 보였다고 표시한다.
     출처는 차례 상태 파일 하나(done_notice · done_missed — 새 기록 파일을 만들지 않는다). lead_of(계획서) = 그 계획서의 Lead pane.
-    done_notice 는 지우지 않고 shown 만 적는다(현황판 카드 · 트레이는 다음 입력까지 그대로 읽는다)"""
+    done_notice 는 지우지 않고 shown 만 적는다(현황판 카드 · 트레이는 다음 입력까지 그대로 읽는다).
+    heir(담당 pane) = 그 담당이 닫혀 이 아테나(lead)가 대신 집어도 되는가(H9 — 담당 아테나가 닫히면 끝난 작업 줄이 영영 안 보인다 ·
+    기준은 lead-send F4 와 같이 떠 있는 이 본체의 아테나). 대신 집은 줄에는 "[원래 담당 <pane> 닫힘]" 을 앞에 붙인다"""
+    owners = {}
+
+    def owner_of(item) -> str:
+        plan = str(item.get('plan') or '')
+        if plan not in owners:
+            owners[plan] = lead_of(plan)
+        # 계획서가 보관돼 못 읽으면 남길 때 적어 둔 담당(현황판의 남은 빈 칸 줄 — server.mjs noteLeftoverForLead)
+        return owners[plan] or str(item.get('lead') or '')
+    heirs = {}
+
+    def mine(item) -> bool:
+        owner = owner_of(item)
+        if owner == lead:
+            return True
+        if not owner or heir is None:
+            return False
+        if owner not in heirs:
+            heirs[owner] = bool(heir(owner))
+        return heirs[owner]
     base = pack_state()
     folder = base / 'agent-turn' if base else None
     if folder is None or not folder.is_dir():
@@ -124,22 +145,22 @@ def take_done_notices(lead: str, lead_of) -> list:
         waiting = [item for item in (data.get('done_missed') or []) if isinstance(item, dict)]
         if current and not current.get('shown'):
             waiting.append(current)
-        if not any(lead_of(str(item.get('plan') or '')) == lead for item in waiting):
+        if not any(mine(item) for item in waiting):
             continue
         with pane_lock(folder, path.stem):
             data = _load(path)
             kept, taken = [], []
             for item in (data.get('done_missed') or []):
-                (taken if isinstance(item, dict) and lead_of(str(item.get('plan') or '')) == lead else kept).append(item)
+                (taken if isinstance(item, dict) and mine(item) else kept).append(item)
             current = data.get('done_notice') if isinstance(data.get('done_notice'), dict) else None
-            if current and not current.get('shown') and lead_of(str(current.get('plan') or '')) == lead:
+            if current and not current.get('shown') and mine(current):
                 current['shown'] = True
                 taken.append(current)
             if not taken:
                 continue
             data['done_missed'] = kept
             _save(path, data)
-        lines += [notice_line(item) for item in taken]
+        lines += [notice_line(item) if owner_of(item) == lead else f'[원래 담당 {owner_of(item)} 닫힘] {notice_line(item)}' for item in taken]
     return lines
 
 

@@ -39,6 +39,7 @@ if [ "$1 $2" = "pane get" ]; then
   echo "{\"pane\":{\"id\":\"$3\",\"agent_status\":\"$state\"}}"
 fi
 [ "$1 $2" = "pane read" ] && printf '❯ \n'
+[ "$1 $2" = "pane list" ] && [ -n "${PANES_JSON:-}" ] && printf '%s\n' "$PANES_JSON"
 
 exit 0
 CLIEOF
@@ -57,9 +58,6 @@ esac
 GHEOF
 chmod +x "$WORK/bin/gh"
 export FAKE_LOG="$WORK/log"; : > "$FAKE_LOG"
-# 바깥 pane 환경이 시험에 새지 않게 — 시험을 돌리는 세션이 headless(CLAUDE_CODE_ENTRYPOINT=sdk…)면 입력 훅이 아무것도 안 하고(F1 사례 3건 실패 · 2026-11-26 전체 검증),
-# 에이전트가 띄운 reviewer pane(ATHENA_REVIEW_FROM_AGENT=1)이면 reviewer 끝 알림 사례가 모두 걸러진다. 필요한 사례는 그 줄에서 직접 준다
-unset CLAUDE_CODE_ENTRYPOINT ATHENA_REVIEW_FROM_AGENT
 
 hook() {   # <prompt|stop> [입력 JSON] — 에이전트 pane p9 에서
   local input="${2:-}"; [ -n "$input" ] || input='{}'
@@ -373,6 +371,12 @@ cat > "$BODY/pack/pack.json" <<'PACKEOF'
 PACKEOF
 printf -- '- Agent: athena-studio-fe\n' >> "$BODY/$PLAN"
 done_notice() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])).get("done_notice") or {}; print(d.get(sys.argv[2]))' "$DATA/state/agent-turn/p9.json" "$1"; }
+# 조용한 끝은 현황판이 떠 있을 때만(H7) — 가짜 현황판(포트만 여는 것)을 띄워 ATHENA_BOARD_PORT 로 가리킨다
+python3 -c 'import socket, time
+server = socket.socket(); server.bind(("127.0.0.1", 0)); server.listen(128); print(server.getsockname()[1], flush=True); time.sleep(900)' > "$WORK/board-port" &
+BOARD_PID=$!; trap 'kill "$BOARD_PID" 2>/dev/null; rm -rf "$WORK"' EXIT
+for _try in 1 2 3 4 5 6 7 8 9 10; do [ -s "$WORK/board-port" ] && break; sleep 0.2; done
+export ATHENA_BOARD_PORT="$(cat "$WORK/board-port")"
 quiet_events() { cat "$DATA/state/events.jsonl" "$BODY/.events.jsonl" 2>/dev/null | grep -c '"type":"agent.done.quiet"'; }
 hook prompt '{"prompt":"조용 1"}'; before="$(sent)"; before_notices="$(notices)"
 hook stop '{"last_assistant_message":"## 1. 무엇이 달라졌나\n- 버튼 문구 고침\n\n## 2. 어디서 확인하나\n- PR #7 (draft)"}'
@@ -414,6 +418,21 @@ AGENT=reviewer hook prompt '{"prompt":"리뷰 2"}'; AGENT=reviewer ATHENA_REVIEW
 check "에이전트 pane 이 띄운 reviewer 의 끝 줄은 넣지 않는다(C2)" "$(sent) $(turn state) $(done_notice id)" "$((before + 7)) done None"
 AGENT=reviewer hook prompt '{"prompt":"리뷰 3"}'; AGENT=reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"⏸ 멈춤: 범위 확인 필요"}'
 check "에이전트가 띄운 reviewer 도 멈춤은 아테나로" "$(sent) $(last_sent | grep -c '\[reviewer → 아테나\] ⏸ 멈춤 · p9')" "$((before + 8)) 1"
+# 구멍 막기(H · 2026-11-26) — 보안 높음 · 형식 없는 물음 · 닫힌 담당은 조용한 끝으로 돌리지 않는다
+echo '- Security result: 높음 1 · 중간 0 @abc' >> "$BODY/$PLAN"
+AGENT=security-reviewer hook prompt '{"prompt":"보안 1"}'; AGENT=security-reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"보안 검토 끝: 높음 1"}'
+check "에이전트가 띄운 보안 검토도 높음이 있으면 아테나로" "$(sent) $(last_sent | grep -c '\[security-reviewer → 아테나\] 끝 · p9')" "$((before + 9)) 1"
+sed -i.bak 's/^- Security result: 높음 1.*/- Security result: 높음 0 · 중간 1 @abc/' "$BODY/$PLAN"
+AGENT=security-reviewer hook prompt '{"prompt":"보안 2"}'; AGENT=security-reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"보안 검토 끝: 중간 1"}'
+check "높음이 없는 보안 검토 끝은 넣지 않는다(C2)" "$(sent)" "$((before + 9))"
+sed -i.bak '/^- Security result:/d' "$BODY/$PLAN"
+hook prompt '{"prompt":"조용 8"}'; hook stop '{"last_assistant_message":"고쳤어요. 배포 순서는 정해 주세요."}'
+check "형식 없이 답을 기다리는 끝은 아테나로(H1)" "$(sent) $(last_sent | grep -c '\] 끝 · p9') $(done_notice id)" "$((before + 10)) 1 None"
+hook prompt '{"prompt":"조용 9"}'; CLOSED="p1" hook stop '{"last_assistant_message":"담당이 닫힌 뒤 끝냈어요."}'
+check "담당 아테나가 닫혔으면 조용한 끝으로 돌리지 않는다(H2 — lead-send 로)" "$(done_notice id) $(ls "$DATA/state/lead-send" 2>/dev/null | grep -c '^p1-.*json$')" "None 1"
+rm -rf "$DATA/state/lead-send"   # 처리기는 폴더가 없어지면 끝난다
+hook prompt '{"prompt":"조용 10"}'; before_board="$(sent)"; ATHENA_BOARD_PORT=1 hook stop '{"last_assistant_message":"현황판이 꺼진 채 끝냈어요."}'
+check "현황판이 꺼져 있으면 조용한 끝으로 돌리지 않는다(H7)" "$(sent) $(done_notice id)" "$((before_board + 1)) None"
 
 # 끝난 작업을 맡은 아테나의 다음 입력에 붙이기(F1) — 아테나 pane 입력 훅(pane-session.py)이 차례 상태 파일의 done_notice 를 읽는다
 cp "$SRC/scripts/hooks/pane-session.py" "$BODY/scripts/hooks/"
@@ -434,5 +453,19 @@ hook prompt '{"prompt":"붙이기 3"}'; hook stop '{"last_assistant_message":"�
 attached="$(lead_prompt p1)"
 check "보이기 전에 지워진 끝 줄도 다음 입력에 붙는다(둘 다)" "$(printf '%s\n' "$attached" | grep -c '요약: 둘째 작업을 끝냈어요.$') $(printf '%s\n' "$attached" | grep -c '요약: 셋째 작업을 끝냈어요.$')" "1 1"
 check "붙인 것은 비운다" "$(lead_prompt p1 | grep -c '끝 · p9') $(turn done_missed)" "0 []"
+# 담당 아테나(p1)가 닫힌 뒤 — 떠 있는 다른 아테나(p2)의 입력에 붙는다(H9 · lead-send F4 와 같은 판정: claude · codex · cwd 가 본체 · 🤖 아님)
+hook prompt '{"prompt":"붙이기 4"}'; hook stop '{"last_assistant_message":"넷째 작업을 끝냈어요."}'
+REAL_BODY="$(cd "$BODY" && pwd -P)"
+panes() { printf '{"panes":[%s]}' "$1"; }
+P2="{\"id\":\"p2\",\"agent\":\"claude\",\"cwd\":\"$REAL_BODY\"}"
+check "담당이 살아 있으면 다른 아테나가 집지 않는다" "$(PANES_JSON="$(panes "{\"id\":\"p1\",\"agent\":\"claude\",\"cwd\":\"$REAL_BODY\"},$P2")" lead_prompt p2 | grep -c '끝 · p9')" 0
+check "pane 목록을 못 읽으면 대신 집지 않는다" "$(lead_prompt p2 | grep -c '끝 · p9')" 0
+check "위임 에이전트(🤖) · 본체 밖 pane 은 대신 집지 않는다" "$(PANES_JSON="$(panes "{\"id\":\"p2\",\"agent\":\"claude\",\"label\":\"🤖 fe\",\"cwd\":\"$REAL_BODY\"}")" lead_prompt p2 | grep -c '끝 · p9') $(PANES_JSON="$(panes '{"id":"p2","agent":"claude","cwd":"/tmp"}')" lead_prompt p2 | grep -c '끝 · p9')" "0 0"
+attached="$(PANES_JSON="$(panes "$P2")" lead_prompt p2)"
+check "담당이 닫혔으면 떠 있는 아테나의 입력에 붙는다(원래 담당 표시)" "$(printf '%s\n' "$attached" | grep -c '^\[원래 담당 p1 닫힘\] \[athena-studio-fe → 아테나\] 끝 · p9 · .* — 요약: 넷째 작업을 끝냈어요.$')" 1
+# 현황판이 남긴 남은 빈 칸 줄(board-*.json) — 계획서가 자동 보관돼 그 경로에 없어도 줄에 적힌 담당(lead)의 입력에 붙는다
+printf '{"done_missed":[{"id":"board-x","plan":"plans/task/gone.md","lead":"p1","line":"[현황판 → 아테나] 자동 완료 · 계획서 plans/task/gone.md","summary":"남은 빈 칸 2개"}]}\n' > "$DATA/state/agent-turn/board-x.json"
+check "보관된 계획서의 남은 빈 칸 줄 — 다른 아테나에는 안 붙고 적힌 담당에게 붙는다" "$(lead_prompt p2 | grep -c 'gone.md') $(lead_prompt p1 | grep -c '자동 완료 · 계획서 plans/task/gone.md — 요약: 남은 빈 칸 2개$')" "0 1"
+check "대신 집은 것도 두 번 붙이지 않는다" "$(PANES_JSON="$(panes "$P2")" lead_prompt p2 | grep -c '끝 · p9')" 0
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

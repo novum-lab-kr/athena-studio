@@ -40,7 +40,7 @@
           "ship",
           "pr"
         ],
-        "note": "大范围修改由 reviewer pane 评审(正式自动 · 轻量说\"评审一下\"),需修复的直接发给该 pane。PR 自动评审的修复也回到该 pane 修好后再 push。"
+        "note": "大范围修改由 reviewer pane 评审(轻量 · 正式都自动),需修复的直接发给该 pane。PR 自动评审的修复也回到该 pane 修好后再 push。"
       },
       {
         "id": "ship",
@@ -566,7 +566,7 @@
         "③ 计划书(这里分路) — 轻量: plans/task/…md 自动创建,不展示 · 不需批准 / 正式: md + 同名 html 决策控制台(plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs) → [이대로 진행](按此进行)确定。确定前不派发",
         "④ 分支 · pane(这里汇合) — 从 prBase 切出分支 · 工作树(new-branch.sh · /call 打开前先问分支),在该工作树用 delegate.sh --plan 打开 pane。正式按共享包 → 使用方仓库顺序,独立服务并行",
         "⑤ 工作 — 请求 → 修改 → 确认 diff · 报告,反复多次(full verify 在结束时一次 — ⑦ 提交)。不清楚的事实(外部契约 · 产品策略 · 默认行为)不猜,只停下那部分写进 Blocked,汇总成一个请求提问(bin/athena request open — [工作]\"等你处理\" · 选择题用 AskUserQuestion)。用户纠正或同一错误出现 3 次时当场提 📚 learn 问题",
-        "⑥ 评审(仅大范围修改) — 正式计划书报告大范围修改时不问就开评审(自动评审)。轻量没有自动评审,只在报告大范围修改(新功能 · 结构变更 · 跨文件逻辑 · 安全 · 数据 · 外部契约)时在末尾加一行\"要评审吗?\"— 小修改或反映评审意见后不加。用户说\"评审一下\"随时在旁边开 reviewer pane。reviewer 不重跑同一棵树已通过的验证(♻️ 复用)。需要决策(选项分叉)的加到同一计划书的决策控制台(plan-html.mjs --add · [이대로 진행] 发到该代理 pane)。需修复的不问就修,每项一行报告",
+        "⑥ 评审(仅大范围修改) — 完成并报告大范围修改(新功能 · 结构变更 · 跨文件逻辑 · 安全 · 数据 · 外部契约)时,不分轻量 · 正式,不问就开评审(自动评审 · 是否大范围在结束时按 pr-auto.mjs --wide 的判定 — 敏感路径 · 代码文件 5 个以上 · 代码 150 行以上 · 计划书 Wide change: yes) — 小修改或反映评审意见后不开。用户说\"评审一下\"随时在旁边开 reviewer pane。reviewer 不重跑同一棵树已通过的验证(♻️ 复用)。需要决策(选项分叉)的加到同一计划书的决策控制台(plan-html.mjs --add · [이대로 진행] 发到该代理 pane)。需修复的不问就修,每项一行报告",
         "⑦ 提交 — \"提交一下\"或 push 时用 commit.sh 提交(仅指定文件 · strict verify · 计划书 ## Commits)。可以多次",
         "⑧ push · PR — 多仓库时 Athena 确认顺序 · 公开范围,每个仓库运行 ship.sh --repo-agent(正式路)。单仓库方式看仓库设置(delegate.sh 结果行会说明)。默认:\"PR 올려줘\"一句 → 提交 → ship.sh 草稿 → 整理标题 · 正文 → 不问就向 prBase 开 draft PR。开了自动 PR 的仓库(autoMerge): 完成后不问就开 draft PR → PR 自动评审。关闭 PR 的仓库(autoPr:false): 用 ship.sh --direct-merge 做 direct merge(大范围修改则 merge 前有评审 gate) — 仅\"PR 올려줘\"时 --user-pr。Actions handoff 仓库: 同一命令以 feature branch push 做 handoff 后立即结束。报告末尾 📚 学到的东西",
         "⑨ 结束 — PR 合并后(direct merge · Actions 看计划书 - Auto merge: 머지됨 行)待办把计划书移到 done → 学习评审(learn-review)根据计划书 · 对话 · diff · 评审评论补充学习候选 → 绑定的 pane 全部关闭后自动 archive(archive/) · 工作树也判定后删除。完成的 pane(PR 合并 · 空闲 10 分钟 · 未在查看 · 无未提交)由待办关闭并通知 Athena 一行",
@@ -591,7 +591,7 @@
       "dot": "amber",
       "title": "轻量 · 正式 — 只在分路处不同",
       "items": [
-        "轻量 — 文案 · 样式 · 单个 bug · 检查 · 调查 · /call · 紧急修复 — 单仓库。计划书自动记录 · 不需批准 · 仅在\"评审一下\"时评审",
+        "轻量 — 文案 · 样式 · 单个 bug · 检查 · 调查 · /call · 紧急修复 — 单仓库。计划书自动记录 · 不需批准 · 大范围修改自动评审",
         "正式 — 新功能 · 多仓库 · API · 结构变更 · 有需要用户决定的事时。决策控制台批准 · 从共享包按顺序派发 · 大范围修改自动评审 · 多仓库由 Athena 交叉评审 · 按顺序 push · PR",
         "即使是正式,单仓库从分支 · pane 起也和轻量一样,在 pane 里一直走到 push · PR",
         "说\"按正式\"就走正式;正式规模的工作说\"直接改\"也按轻量(在报告中注明)。从轻量开始扩大到多仓库 · API 时停下转为正式",

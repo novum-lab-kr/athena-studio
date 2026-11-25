@@ -156,6 +156,11 @@ const sent = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).ma
 const notes = sent.filter((args) => args[4]?.startsWith('[현황판 → 아테나]'))
 check('일반 칸을 남긴 자동 완료는 아테나 pane 에 넣지 않는다(할 일 없는 알림)', notes.length === 0, JSON.stringify(sent))
 check('남은 칸 수는 그 계획서 Status 설명에만', /^- Status: done — 자동 — .* · 남은 빈 칸 2개$/m.test(plan('20261101-plain')) && !/남은 빈 칸/.test(plan('20261101-empty')), plan('20261101-plain').match(/^- Status:.*$/m)?.[0])
+// 남은 칸이 있는 자동 완료만 맡은 아테나의 다음 입력에 붙을 줄을 남긴다(H6 — 차례 상태 폴더의 board-*.json · 입력 훅이 done_missed 를 읽는다)
+const leftovers = (() => { try { return readdirSync(join(core, 'agent-turn')).filter((name) => /^board-.*\.json$/.test(name)).map((name) => JSON.parse(read(join(core, 'agent-turn', name))).done_missed?.[0]) } catch { return [] } })()
+check('남은 칸이 있는 자동 완료는 아테나 다음 입력 줄로 남는다', leftovers.some((item) => item?.plan === 'plans/task/20261101-plain.md' && /남은 빈 칸 2개/.test(item.summary)), JSON.stringify(leftovers))
+check('그 줄에 담당 pane 을 같이 적는다(계획서가 보관돼 경로가 바뀌어도 집게)', leftovers.find((item) => item?.plan === 'plans/task/20261101-plain.md')?.lead === 'p1', JSON.stringify(leftovers))
+check('남은 칸이 없으면 남기지 않는다', !leftovers.some((item) => item?.plan === 'plans/task/20261101-empty.md'), JSON.stringify(leftovers))
 
 console.log('── 이어 갈 이슈')
 const files = readdirSync(join(core, 'issues')).sort()

@@ -179,6 +179,15 @@ writeFileSync(join(turnDir, 'p7.json'), JSON.stringify({ state: 'done', ts: T0 /
 watch = make()
 await watch.run(T0 + 25 * 3600_000)
 check('닫힌 pane 의 하루 지난 차례 상태는 지운다', !existsSync(join(turnDir, 'p7.json')) && existsSync(join(turnDir, 'p9.json')))
+// 아테나가 아직 안 집은 조용한 끝 알림이 남은 파일은 하루가 지나도 둔다(H9) — 집힌 뒤(shown · done_missed 빔)에는 지운다
+writeFileSync(join(turnDir, 'p7.json'), JSON.stringify({ state: 'done', ts: T0 / 1000, done_notice: { id: 'a', line: '끝' } }))
+writeFileSync(join(turnDir, 'p6.json'), JSON.stringify({ state: 'working', ts: T0 / 1000, done_missed: [{ id: 'b', line: '끝' }] }))
+writeFileSync(join(turnDir, 'p5.json'), JSON.stringify({ state: 'done', ts: T0 / 1000, done_notice: { id: 'c', line: '끝', shown: true }, done_missed: [] }))
+watch = make()
+await watch.run(T0 + 25 * 3600_000)
+check('안 집힌 끝 알림(done_notice · done_missed)이 있는 닫힌 pane 의 차례 상태는 하루가 지나도 남는다', existsSync(join(turnDir, 'p7.json')) && existsSync(join(turnDir, 'p6.json')))
+check('집힌 뒤(shown)에는 지운다', !existsSync(join(turnDir, 'p5.json')))
+rmSync(join(turnDir, 'p7.json')); rmSync(join(turnDir, 'p6.json'))
 
 // 5. lead-notice.mjs — 창이 떠 있으면 미뤘다가 flush · 같은 key 한 번
 const sent = []

@@ -382,6 +382,20 @@ const checkLearnJev = () => {
 
 // 일반 빈 칸을 남기고 자동 완료했으면 Status 설명 끝에 남은 칸 수를 적는다 — 아테나 pane 에는 넣지 않는다(할 일 없는 알림이 차례 하나를 쓴다 · 2026-11-26)
 const leftoverNote = (plan) => (plan.progress?.open ? ` · 남은 빈 칸 ${plan.progress.open}개` : '')
+// 남은 빈 칸이 있으면 맡은 아테나의 다음 입력에 한 줄 붙게 남긴다(F1 과 같은 길 — 입력 훅 pane-session.py 가 state/agent-turn/*.json 의 done_missed 를 읽는다).
+// 아테나가 남은 일을 이슈로 올릴 계기다 — pane 에 넣지는 않는다. 계획서마다 파일 하나(board-<지문>.json · pane 번호가 아니라 차례 감시는 읽지 않는다).
+// 담당(Lead pane)을 줄에 같이 적는다 — 완료된 계획서는 곧 자동 보관돼 경로가 바뀌니 입력 훅이 그때는 계획서에서 담당을 못 읽는다. 담당이 없으면 집을 쪽이 없어 남기지 않는다
+const noteLeftoverForLead = (plan, reason) => {
+  if (!plan.progress?.open || !plan.leadPane) return
+  try {
+    const folder = join(BOOT_PATHS.state, 'agent-turn')
+    mkdirSync(folder, { recursive: true })
+    const name = `board-${createHash('sha1').update(plan.id).digest('hex').slice(0, 12)}`
+    const item = { id: name, plan: plan.id, lead: String(plan.leadPane).split(/\s+/)[0], line: `[현황판 → 아테나] 자동 완료 · 계획서 ${plan.id}`, summary: `${reason} — 남은 일은 이슈로 올린다` }
+    writeFileSync(join(folder, `.${name}.tmp`), `${JSON.stringify({ done_missed: [item] })}\n`)
+    renameSync(join(folder, `.${name}.tmp`), join(folder, `${name}.json`))
+  } catch (error) { console.log(`⚠️ 남은 빈 칸 알림을 남기지 못함 ${plan.id}: ${error.message}`) }
+}
 const openStepsNoted = new Set() // 보류 알림은 PR 묶음마다 한 번만(매 3초 같은 줄을 찍지 않게)
 const autoDonePlans = async (plans, panesAvailable) => {
   // pane 목록을 읽지 못하면 닫힘을 확인할 수 없다.
@@ -413,6 +427,7 @@ const autoDonePlans = async (plans, panesAvailable) => {
     const error = setPlanStatus(plan.id, 'done', reason, mergedMark(counted))
     if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); return }
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
+    noteLeftoverForLead(plan, reason)
     plan.status = 'done'
     plan.column = 'done'
     enqueueLearn(plan.id, mergedMark(counted), counted)
@@ -429,6 +444,7 @@ const autoDonePlans = async (plans, panesAvailable) => {
     const error = setPlanStatus(plan.id, 'done', reason, direct.mark)
     if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); continue }
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
+    noteLeftoverForLead(plan, reason)
     plan.status = 'done'
     plan.column = 'done'
     await cleanupPlanWorktrees(plan, [])

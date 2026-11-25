@@ -4,6 +4,9 @@
 # 통과하면 "트리 지문 · 시험 이름" 을 남긴다(scripts/verify/core-test-pass.sh) — 검증 스크립트가 같은 트리에서 이 시험을 또 돌리지 않는다.
 #   시험 도중 트리가 바뀌었거나 실패했거나 ATHENA_TEST_NO_RECORD=1 이면 남기지 않는다
 # 시험 본문을 다시 실행해 그 출력을 거르므로 시험 안의 변수 · 출력 캡처 · 표준 오류는 그대로다
+# 바깥 pane 환경이 시험에 새지 않게 걷어 낸다 — 시험을 돌리는 세션이 headless(CLAUDE_CODE_ENTRYPOINT=sdk…)면 입력 훅 pane-session.py 가 아무것도 안 하고,
+#   에이전트가 띄운 reviewer pane(ATHENA_REVIEW_FROM_AGENT=1)이면 reviewer 끝 알림이 걸러진다(2026-11-26 전체 검증에서 F1 사례 3건 실패). 필요한 사례는 그 줄에서 직접 준다
+unset CLAUDE_CODE_ENTRYPOINT ATHENA_REVIEW_FROM_AGENT
 if [ "${ATHENA_TEST_VERBOSE:-0}" != 1 ] && [ -z "${ATHENA_TEST_FILTERED:-}" ]; then
   export ATHENA_TEST_FILTERED=1
   athena_test_start=$SECONDS

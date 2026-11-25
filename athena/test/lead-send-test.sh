@@ -386,6 +386,20 @@ mine() { env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID="$1" ATHENA_STUDIO_SOCKET=/x 
 check "p1 이 맡은 계획서의 pane 만" "$(mine p1)" "p5 "
 check "다른 아테나(p2)에게는 그쪽 pane 만" "$(mine p2)" "p6 "
 check "한 줄 형식 — id · 이름표 · 차례 상태 · 계획서" "$(mine p1 brief)" "p5 · 🤖 web-fe · working · plans/task/x.md "
+# 일하는 중인 pane 에 보낸 글(H5) — 데몬은 전송 확인을 못 해 timeout 을 내지만 글은 대기열에 들어간다. 오류 대신 queued
+send_wait() { env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/cli/athena-studio-cli" ATHENA_WAIT_START_SECONDS=0 python3 "$BODY/scripts/screen" pane send-text "$1" '지시' --enter --wait-start 2>/dev/null; echo "rc=$?"; }
+touch "$WORK/timeout"
+check "일하는 중인 pane 은 timeout 이어도 queued" "$(send_wait p5 | tr '\n' ' ')" "queued rc=0 "
+check "일하지 않는 pane 의 timeout 은 오류 그대로" "$(send_wait p6 | tr '\n' ' ')" "rc=1 "
+rm -f "$WORK/timeout"
+check "일하는 중이면 기다리지 않고 queued" "$(send_wait p5 | tr '\n' ' ')" "queued rc=0 "
+check "쉬는 pane 은 지금처럼 idle" "$(send_wait p6 | tr '\n' ' ')" "idle rc=0 "
+# 담당 없는 pane(H4) — 계획서 Lead pane 이 닫힌 pane(p8) · 비어 있는 것은 어느 아테나에게도 "담당 없음" 으로 보인다
+printf -- '# 주인 없는 일\n\n## Checkpoint\n- Status: in_progress\n- Lead pane: p8\n' > "$BODY/plans/task/z.md"
+bound p7 plans/task/z.md
+check "닫힌 담당의 pane 은 담당 없음으로 따로" "$(mine p1 brief)" "p5 · 🤖 web-fe · working · plans/task/x.md 담당 없음 1개(계획서 Lead pane 이 비었거나 닫힌 pane) p7 · 🤖 묶이지 않음 · plans/task/z.md "
+check "ids 형식은 맡은 pane 만 그대로" "$(mine p1)" "p5 "
+rm -f "$DATA/state/pane-sessions/p7.json" "$BODY/plans/task/z.md"
 rm -f "$DATA/state/pane-sessions/p5.json" "$DATA/state/pane-sessions/p6.json" "$DATA/state/agent-turn/p5.json" "$BODY/plans/task/y.md"
 
 echo "▶ 사용법"

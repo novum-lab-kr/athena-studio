@@ -15,7 +15,7 @@ $ scripts/screen
   pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
   pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음)
-  pane send-text <pane> <글> [--enter [--wait-start]](글 뒤 Enter 까지 · --wait-start 는 받은 에이전트가 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄)
+  pane send-text <pane> <글> [--enter [--wait-start]](글 뒤 Enter 까지 · --wait-start 는 받은 에이전트가 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄 · 일하는 중이면 기다리지 않고 queued)
   pane wait-start <pane> [--timeout MS]        방금 띄운 에이전트 pane 이 첫 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄
   pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
