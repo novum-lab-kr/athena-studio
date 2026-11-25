@@ -112,15 +112,16 @@ QG="$(A request open --kind question --title 닫힌pane --pane pgone | field req
 R="$(AS pg1 request answer "$QG" --by chat --text 있다)"
 check "묻던 pane 에 못 보내면 answered 로 남고 sent false(앱에서 다시 보내기)" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = False ]' "$R"
 A request cancel "$QG" > /dev/null
-# 아테나(리드)가 서버 명령 확인 요청을 승인(--by lead · 2026-11-21) — 답한 사람이 lead 로 남고, 묻던 에이전트 pane 에 한 줄 · answered(에이전트 ack · ssh-run.sh 승인 확인은 answered 도 받는다)
+# 아테나(리드)가 서버 명령 확인 요청을 승인(--by lead · 2026-11-21) — 답한 사람이 lead 로 남고, 묻던 에이전트 pane 에 한 줄.
+# 서버 확인 요청은 2026-11-25 부터 바로 delivered(ack 를 기다리지 않는다 — ssh-run.sh 승인 확인은 delivered 도 받는다)
 : > "$FAKE_LOG"
 QL="$(A request open --kind decision --title '서버 명령 확인' --option 실행 --option 취소 --key server-cmd:abc --pane p5 | field request.id)"
 R="$(AS pg1 request answer "$QL" --by lead --choice 실행)"
-check "리드가 답 → by lead · answered · 묻던 pane 에 보냄" '[ "$(echo "$R" | field request.answer.by)" = lead ] && [ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = True ] && grep -q "^pane run p5 \[요청 $QL\] 서버 명령 확인 — 답: 실행" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
+check "리드가 답 → by lead · delivered · 묻던 pane 에 보냄" '[ "$(echo "$R" | field request.answer.by)" = lead ] && [ "$(echo "$R" | field request.state)" = delivered ] && [ "$(echo "$R" | field sent)" = True ] && grep -q "^pane run p5 \[요청 $QL\] 서버 명령 확인 — 답: 실행" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
 : > "$FAKE_LOG"
 QM="$(A request open --kind decision --title '리드 자기 확인' --option 실행 --key server-cmd:def --pane pg1 | field request.id)"
 R="$(AS pg1 request answer "$QM" --by lead --choice 실행)"
-check "리드가 자기 pane 요청에 답 → answered · 보내지 않음" '[ "$(echo "$R" | field request.state)" = answered ] && [ ! -s "$FAKE_LOG" ]' "$R | $(cat "$FAKE_LOG")"
+check "리드가 자기 pane 요청에 답 → delivered · 보내지 않음" '[ "$(echo "$R" | field request.state)" = delivered ] && [ ! -s "$FAKE_LOG" ]' "$R | $(cat "$FAKE_LOG")"
 node scripts/athena.mjs request answer "$QM" --by leader --choice 실행 --json > /dev/null 2>&1; check "모르는 --by 는 사용법 오류(2)" '[ $? -eq 2 ]'
 A request cancel "$QM" > /dev/null
 
@@ -468,6 +469,32 @@ PBEFORE2="$(perm_count)"
 perm_watch "1 1 1" "ls" yes > "$WORK/pw3.out"
 check "[작업] 에서 먼저 답하면 거두지 않는다(answered 로 남아 전달을 기다린다)" 'perm_list | python3 -c "import json,sys; r=json.load(sys.stdin)[$PBEFORE2]; sys.exit(0 if r[\"state\"]==\"answered\" else 1)"' "$(perm_list)"
 check "권한 알림은 pane 에 키를 보내거나 허용을 돌려주지 않는다(코드에 send_keys · send_text · permissionDecision · behavior 없음)" '! grep -q "send_keys\|send_text\|permissionDecision\|behavior" scripts/hooks/permission-to-request.py scripts/lib/pane_request.py'
+
+section "답이 ack 없이 남지 않게(2026-11-25)"
+# 서버 확인 요청은 받을 에이전트의 ack 가 없다(답을 쓰는 것은 ssh-run.sh 다시 실행) — 누가 답하든 바로 delivered
+SC="$(A request open --kind decision --title "서버 web: 명령 실행 확인" --option 실행 --option 취소 --key "server-cmd:web:abc" | field request.id)"
+R="$(A request answer "$SC" --by board --choice 취소)"
+check "서버 명령 확인(server-cmd:)에 답하면 바로 delivered" '[ "$(echo "$R" | field request.state)" = delivered ] && [ -n "$(echo "$R" | field request.deliveredAt)" ] && [ "$(echo "$R" | field request.answer.choice)" = 취소 ]' "$R"
+SP="$(A request open --kind decision --title "서버 web: 파일 고치기 확인" --option 실행 --option 취소 --key "server-put:web:abc" | field request.id)"
+R="$(A request answer "$SP" --by app --choice 실행)"
+check "서버 파일 확인(server-put:)도 바로 delivered · ack 해도 already" '[ "$(echo "$R" | field request.state)" = delivered ] && [ "$(A request ack "$SP" | field already)" = True ]' "$R"
+check "다른 키의 요청은 그대로 answered(에이전트 ack 를 기다린다)" 'OT="$(A request open --kind question --title 그대로 --key "srv-cmd-like" | field request.id)"; [ "$(A request answer "$OT" --by board --text 네 | field request.state)" = answered ] && A request cancel "$OT" >/dev/null'
+# 답한 지 24시간이 지나도 ack 가 없는 answered → 목록이 expired 로 닫는다(답은 파일에 남는다)
+OLD="$(A request open --kind question --title 오래된 답 --key stale-1 | field request.id)"
+A request answer "$OLD" --by app --text 반영됨 >/dev/null
+NEW="$(A request open --kind question --title 방금 답 --key stale-2 | field request.id)"
+A request answer "$NEW" --by app --text 방금 >/dev/null
+python3 - "$DIR/$OLD.json" <<'PY'
+import json, sys, datetime
+path = sys.argv[1]
+data = json.load(open(path))
+data['answer']['at'] = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=25)).isoformat().replace('+00:00', 'Z')
+json.dump(data, open(path, 'w'))
+PY
+A request list >/dev/null
+R="$(A request show "$OLD")"
+check "답한 지 24시간 넘은 answered → expired · 답은 남는다" '[ "$(echo "$R" | field request.state)" = expired ] && [ "$(echo "$R" | field request.answer.text)" = 반영됨 ] && echo "$R" | grep -q "24시간"' "$R"
+check "방금 답한 answered 는 그대로 남는다" '[ "$(A request show "$NEW" | field request.state)" = answered ] && A request cancel "$NEW" >/dev/null'
 
 section "사용법 · 약속"
 node scripts/athena.mjs request open --title x --json > /dev/null 2>&1; check "종류 없으면 사용법 오류(2)" '[ $? -eq 2 ]'

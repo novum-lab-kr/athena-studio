@@ -75,11 +75,12 @@ approved() {
 ask() {
   local key="$1" title="$2" body="$3" out id
   if ! out="$("$REQUEST_BIN" request open --kind decision --title "$title" --body-file "$body" \
-    --option '실행 :: 이대로 실행한다' --option '취소 :: 실행하지 않는다' --key "$key" 2>&1)"; then
+    --option '실행 :: 이대로 실행한다' --option '취소 :: 실행하지 않는다' --key "$key" --json 2>&1)"; then
     echo "❌ 확인 요청을 열지 못했다 — 실행하지 않았다" >&2
     printf '%s\n' "$out" | tail -3 >&2
     exit 1
   fi
+  # --json 이 없으면 사람용 줄(✅ …)이라 id 를 못 읽어 "?" 로 찍었다(2026-11-25)
   id="$(printf '%s\n' "$out" | tail -1 | python3 -c 'import json,sys; print((json.load(sys.stdin).get("request") or {}).get("id") or "")' 2>/dev/null || true)"
   echo "⏸ 사람 확인이 필요하다 — 요청 ${id:-?} 을 열었다([작업] 탭). 실행하지 않았다." >&2
   echo "   답이 \"실행\" 이면 같은 명령 앞에 ATHENA_SERVER_APPROVED=${id:-<요청 id>} 를 붙여 다시 낸다(60분 안 · 한 번만 · 명령이 바뀌면 다시 확인)." >&2
