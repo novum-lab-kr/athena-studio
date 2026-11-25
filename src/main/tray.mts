@@ -28,7 +28,7 @@ type Workspace = { id: string; label: string }
 type PeekReply = { result?: { panes: TrayPane[]; workspaces: Workspace[]; focused: string | null; text?: unknown } }
 type RequestsState = { supported: boolean; requests: unknown[] }
 // 현황판 /api/state · /api/metrics 에서 읽는 칸만
-type BoardState = { header?: { usage?: unknown[] } }
+type BoardState = { header?: { usage?: unknown[] }; panes?: unknown }
 // 워커가 보내는 최근 7일 토큰(src/lib/daily-tokens.mts)
 type DailyTokens = { at: number; days: { day: string; claude: number; codex: number }[] }
 // 알림 대상 — 묶인 알림(trayModel.bundle)의 target 에 계획서 결정 콘솔(html)이 올 수도 있다
@@ -295,6 +295,8 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
         trayState.boardAt = Date.now()
         const board = (await fetchBoardState(ctx.boardPortNow())) as BoardState | null
         trayState.boardUp = Boolean(board)
+        // 조용한 끝 알림 — 아테나 pane 에 넣지 않은 작업 에이전트의 끝 줄(지금 보고 있는 pane 은 뺀다)
+        if (board) for (const item of trayModel.bundle(trayNotifier.updateDone(board.panes, say).filter((entry) => !lookingAt(entry)), say)) notify(item)
         if (board) {
           trayState.usage = (board.header && board.header.usage) || []
         } else {

@@ -36,6 +36,7 @@ shutil.copyfile(src / "scripts/hooks/compact-checkpoint.py", body / "scripts/hoo
 shutil.copyfile(src / "scripts/hooks/codex-context.py", body / "scripts/hooks/codex-context.py")
 for name in ("transcript-search.mjs", "lead-log.mjs"):
     shutil.copyfile(src / "scripts" / name, body / "scripts" / name)
+shutil.copy2(src / "scripts/screen", body / "scripts/screen")   # lead-log.mjs 가 쓴 창 · 열린 pane 을 묻는다
 (body / ".claude").mkdir()
 (body / ".claude/settings.json").write_text(json.dumps({"autoCompactWindow": 200000}))
 for folder in ("plans/task", "plans/feature", "plans/artifacts/20261103-x", "issues"):
@@ -304,6 +305,38 @@ check("압축 뒤 아테나 안내 맨 앞에 리드 기록 최근 줄 · 그다
       and text.index("두 번째 줄") < text.index("20261105-new.md"), text)
 log_script = script_in(text, "lead-log.mjs")
 check("안내의 리드 기록 명령 경로에 스크립트가 있다", pathlib.Path(log_script).resolve() == (body / "scripts/lead-log.mjs").resolve() and pathlib.Path(log_script).is_file(), log_script)
+
+print("리드 기록을 아테나 창별로(F2)")
+own_fixture = tmp / "fixture-own"
+own_fixture.mkdir()
+(own_fixture / "pane_list.json").write_text(json.dumps({"panes": [{"id": "px4"}, {"id": "px7"}]}))
+own_cli = {"ATHENA_STUDIO_CLI": str(src / "scripts/screen-check/fake-bin/athena-studio-cli"), "ATHENA_STUDIO_SOCKET": str(tmp / "no.sock"),
+           "FAKE_SCREEN_FIXTURE": str(own_fixture)}
+def node_in(pane, *args):
+    env = {key: value for key, value in os.environ.items() if not key.startswith("ATHENA_")}
+    env.update({"ATHENA_SCREEN": "studio", "ATHENA_STUDIO": "1", "ATHENA_STUDIO_PANE_ID": pane, **own_cli})
+    done = subprocess.run(["node", *map(str, args)], capture_output=True, text=True, env=env, timeout=20)
+    return done.returncode, done.stdout.strip()
+code, out = node_in("px4", body / "scripts/lead-log.mjs", "결정", "내 창 줄")
+check("쓴 창을 줄에 적는다(시각 뒤 · 종류 앞)", code == 0 and re.search(r"^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} <px4> \[결정\] 내 창 줄$", out) is not None, out)
+node_in("px7", body / "scripts/lead-log.mjs", "결정", "다른 열린 창 줄")
+node_in("px9", body / "scripts/lead-log.mjs", "사실", "닫힌 창 줄")
+code, out = node_in("px4", body / "scripts/lead-log.mjs", "--tail", "20")
+check("--tail 은 내 줄만 — 표시 없는 옛 줄 · 내 pane · 닫힌 pane 의 줄(pane 번호가 바뀌어도 이어 읽는다) · 다른 열린 창 줄은 뺀다",
+      "두 번째 줄" in out and "내 창 줄" in out and "닫힌 창 줄" in out and "다른 열린 창 줄" not in out, out)
+code, out = node_in("px4", body / "scripts/lead-log.mjs", "--tail", "20", "--all")
+check("--tail --all 은 모든 창의 줄", "다른 열린 창 줄" in out and "내 창 줄" in out, out)
+code, out = node(body / "scripts/lead-log.mjs", "--tail", "20")
+check("화면 밖에서는 거르지 않는다", "다른 열린 창 줄" in out, out)
+code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4", env_extra=own_cli)
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check("압축 뒤 안내도 내 줄만", "내 창 줄" in text and "닫힌 창 줄" in text and "두 번째 줄" in text and "다른 열린 창 줄" not in text, text)
+code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px7", env_extra=own_cli)
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check("다른 창의 안내에는 그 창 줄", "다른 열린 창 줄" in text and "내 창 줄" not in text, text)
+code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4", env_extra={**own_cli, "FAKE_SCREEN_FIXTURE": str(tmp / "none")})
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check("열린 pane 을 못 읽으면 거르지 않는다(놓치지 않는 쪽)", "다른 열린 창 줄" in text and "내 창 줄" in text, text)
 
 print("여러 팩 구조의 리드 기록")
 pack_real = tmp / "data/packs/p1"

@@ -7,7 +7,9 @@
 # 사용:
 #   scripts/delegate.sh reviewer --cwd <트리> --here --plan <계획서> "<지시>"
 #   scripts/review-wait.sh --plan <계획서> --dir <리뷰할 트리> [--timeout <초, 기본 1200>]
-# 끝: 0 = 새 결론(그 줄을 출력) · 1 = 시간 초과(지금 줄을 출력) · 2 = 사용법
+# 보안 검토도 같이 띄웠으면(같은 레포 · 브랜치의 '- Security review: … · 띄움 <시각>' 줄) 그 뒤에 적힌 '- Security result:' 줄도 기다려 같이 출력한다 —
+#   띄운 작업자가 보안 검토 pane 화면을 다시 읽지 않고 발견(--note 의 '파일:줄 — 고칠 방법')을 받는다(2026-11-26). 띄움 줄이 없으면 Review result 만 기다린다
+# 끝: 0 = 새 결론(그 줄을 출력 · 보안 검토가 있으면 두 줄) · 1 = 시간 초과(지금 줄을 출력) · 2 = 사용법
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
 PLAN=""; DIR=""; TIMEOUT=1200
@@ -31,6 +33,7 @@ REPO="$(basename "${MAIN:-$DIR}")"
 for link in "$ATHENA_DIR"/repos/*; do [ -n "$MAIN" ] && [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$MAIN" ] && REPO="$(basename "$link")"; done
 line() { grep -F -- "📦 $REPO · 🌿 $BRANCH " "$PLAN" | grep '^- Review result:' | tail -1; }
 # 결론 줄·띄운 줄의 시각(YYYY-MM-DD HH:MM) — 분 단위라 같은 분이면 띄운 뒤로 친다
+security_line() { grep -F -- "📦 $REPO · 🌿 $BRANCH " "$PLAN" | grep '^- Security result:' | tail -1; }
 stamp_of() { printf '%s' "$1" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' | head -1; }
 LAUNCHED="$(grep '^- Review:' "$PLAN" | grep -F -- "🌿 $BRANCH " | grep -oE '띄움 [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' | tail -1 | sed 's/^띄움 //')"
 # 새 결론인가 — reviewer 를 띄운 시각을 알면 그 뒤에 적힌 결론(기다리기를 늦게 시작했어도 이미 끝난 것까지), 모르면(옛 줄) 기다리기 시작한 뒤 바뀐 줄
@@ -42,18 +45,26 @@ fresh() {
     [ "$1" != "$BEFORE" ]
   fi
 }
+SECURITY_LAUNCHED="$(grep '^- Security review:' "$PLAN" | grep -F -- "📦 $REPO · 🌿 $BRANCH " | grep -oE '띄움 [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}' | tail -1 | sed 's/^띄움 //')"
+# 보안 결론이 다 왔나 — 보안 검토를 띄우지 않았으면 기다리지 않는다
+security_done() {
+  [ -n "$SECURITY_LAUNCHED" ] || return 0
+  [ -n "$1" ] && [ ! "$(stamp_of "$1")" \< "$SECURITY_LAUNCHED" ]
+}
 
 BEFORE="$(line)"
-echo "⏳ reviewer 결론 기다림 — 📦 $REPO · 🌿 $BRANCH${LAUNCHED:+ · 띄움 $LAUNCHED} (최대 ${TIMEOUT}초)" >&2
+echo "⏳ reviewer 결론 기다림 — 📦 $REPO · 🌿 $BRANCH${LAUNCHED:+ · 띄움 $LAUNCHED}${SECURITY_LAUNCHED:+ · 보안 검토 띄움 $SECURITY_LAUNCHED} (최대 ${TIMEOUT}초)" >&2
 waited=0
 while [ "$waited" -lt "$TIMEOUT" ]; do
-  NOW="$(line)"
-  if fresh "$NOW"; then
+  NOW="$(line)"; SECURITY_NOW="$(security_line)"
+  if fresh "$NOW" && security_done "$SECURITY_NOW"; then
     echo "$NOW"
+    [ -z "$SECURITY_LAUNCHED" ] || echo "$SECURITY_NOW"
     exit 0
   fi
   sleep 5; waited=$((waited + 5))
 done
-echo "⌛ ${TIMEOUT}초 안에 새 결론이 없다 — 지금 줄: ${NOW:-없음}" >&2
+echo "⌛ ${TIMEOUT}초 안에 새 결론이 없다 — 지금 줄: ${NOW:-없음}${SECURITY_LAUNCHED:+ · 보안: ${SECURITY_NOW:-없음}}" >&2
 echo "${NOW:-}"
+[ -z "$SECURITY_LAUNCHED" ] || [ -z "${SECURITY_NOW:-}" ] || echo "$SECURITY_NOW"
 exit 1

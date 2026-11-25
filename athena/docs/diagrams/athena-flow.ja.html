@@ -5766,7 +5766,7 @@ window.addEventListener('keydown', (event) => {
           <li>&bull; ⑦ コミット — 「コミットして」か push が commit.sh でコミットする(指定ファイルだけ · strict verify · 計画書 ## Commits)。何度でもよい</li>
           <li>&bull; ⑧ push · PR — 複数レポならアテナが順番 · 公開範囲を確認し、レポごとに ship.sh --repo-agent(正式の道)。レポ一つなら方法はレポ設定ごと(delegate.sh の結果行が知らせる)。既定:「PR 올려줘」の一言 → コミット → ship.sh 下書き → タイトル · 本文を整える → 聞かずに prBase へ draft PR。自動 PR のレポ(autoMerge): 終わったら聞かずに draft PR → PR 自動レビュー。PR オフのレポ(autoPr:false): ship.sh --direct-merge で direct merge(広い修正なら merge 前にレビュー gate) — 「PR 올려줘」のときだけ --user-pr。Actions handoff レポ: 同じコマンドが feature branch の push で handoff してすぐ終わる。報告の最後に 📚 学んだこと</li>
           <li>&bull; ⑨ 終わり — PR がマージされると(direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す → 学習レビュアー(learn-review)が計画書 · 会話 · diff · レビューコメントから学習候補を足す → 結び付いた pane がすべて閉じると自動 archive(archive/) · ワークツリーも判定して消す。終わった pane(PR マージ · 10 分休み · 見ていない · 未コミットなし)は作業リストが閉じてアテナに一行</li>
-          <li>&bull; pane 間の受け渡しは scripts/screen pane send-text で直接 — アテナには lead-send.py(受け取れなければためておいて後で入れる)。ユーザーに伝言を頼まない</li>
+          <li>&bull; pane 間の受け渡しは scripts/screen pane send-text で直接 — アテナには lead-send.py(受け取れなければためておいて後で入れ、担当アテナが閉じていれば開いているアテナに引き継ぐ)。送った後の確認は --wait-start 一回。ユーザーに伝言を頼まない</li>
           <li>&bull; 質問 · 許可待ちは Studio の [作業] ポップアップで確認する。質問はポップアップで答え、許可は [pane へ移動] の後に元のウィンドウで選ぶ。選択画面は waiting 状態</li>
           <li>&bull; Codex の保護フックは最初の Bash コマンドだけを検査し、write_stdin の後続入力は検査しない。フックの信頼は /hooks で確認する</li>
           <li>&bull; 確認 loop(ときどき) — 既定は完了報告の後すぐ push · PR(autoMerge レポは聞かずに)。UI 変更 · autoMerge でないレポ(「PR 올려줘」)のときだけ、アテナがスクショをユーザーに見せ、承認ならその pane に push 指示 · 再作業ならその pane の作業に戻る。UI 確認は handoff 前に終える</li>
@@ -5845,7 +5845,7 @@ window.addEventListener('keydown', (event) => {
           <li>&bull; (複数レポ · アテナ作業) reviewer に計画書 + 対象レポ(ワークツリーなら --cwd)を渡す。修正が必要な項目は聞かずにそのエージェント pane へすぐ続けて指示(アテナが直接送る)。決定が必要(選択肢が分かれる)なら同じ計画書の決定コンソールに追加して見せる(plan-html.mjs --add)</li>
           <li>&bull; 検証結果をそのまま確認する — 失敗を隠さない</li>
           <li>&bull; handoff した仕事の結果をアテナが待って見張らない — 失敗ログは担当した pane に行き、エージェントはやっていた仕事を終えてからそのワークツリーで直し、もう一度 handoff する</li>
-          <li>&bull; エージェント pane の終わり · 停止 · 質問もボードが受け持つ — 終了通知(終わり · ⏸ 停止 · 質問で停止 · reviewer を含む)をアテナが 2 分受け取らなければもう一度入れ、10 分なら [作業] リクエスト。アテナは pane を手で見張らず、ボードが見ない外の仕事(Actions リリース · デプロイ · 外部サービスの回復)だけ待ってよい</li>
+          <li>&bull; エージェント pane の終わり · 停止 · 質問もボードが受け持つ — 終了通知(終わり · ⏸ 停止 · 質問で停止 · reviewer を含む)をアテナが 2 分受け取らなければもう一度入れ、10 分なら [作業] リクエスト。レポ一つの計画書の形式どおりの終わりはアテナ pane に入れず、Mac 通知 · ボードのカード · アテナの次のメッセージに一行で届く。アテナは pane を手で見張らず、ボードが見ない外の仕事(Actions リリース · デプロイ · 外部サービスの回復)だけ待ってよい</li>
           <li>&bull; 検証は二段階 — 作業中は差分だけ素早く確認し、full verify は終わるときに一回(commit.sh strict verify · 同じツリーで通っていれば reuse.sh ♻️ 再利用 · レビュアー · merge も同じ道)</li>
         </ul>
       </div>
@@ -5859,7 +5859,7 @@ window.addEventListener('keydown', (event) => {
           <li>&bull; 自動 archive — 計画書の PR がすべてマージされて done + learn review 終了 + 結び付いたエージェント pane がすべて閉じると、作業リストが archive/&lt;名前&gt;/ にイシュー · 計画書をまとめてコミットする。その計画書のワークツリーも判定して消す(未コミット · unpushed コミット · 使っている pane があれば残し、理由を Checkpoint に)。終わったエージェント pane は作業リストが閉じる · 過ぎた仕事は [アーカイブ]タブ</li>
           <li>&bull; 作業リストの [学習]タブ — 学習候補を [넣기](入れる) · [고쳐서 넣기](直して入れる) · [버리기](捨てる)(入れるとノート gotchas に一行)、学習した内容の修正 · 削除、スキル候補はアテナに任せる。/sync の最後に learn-curator が 30 日使っていないスキルを、gotchas-check が消えたファイルを指すノートの行 · 分ける時期のノート(共通 2 万字 · 同じ画面 5 行 → gotchas/&lt;フォルダ&gt;.md)を cleanup 候補に(消さない)</li>
           <li>&bull; イシュー完了可能バッジ = 確認結果 · 後続 · fix · 計画 done + PR MERGED。バッジが出たらアテナが移す(イシュー · 計画書はローカル — git には archive/ だけ)</li>
-          <li>&bull; auto done — 計画書の PR 行の PR がすべてマージされると(GitHub MERGED、base は問わない · direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す。マージせずに閉じた PR は判定から外し、Progress に段階の欄(N단계 で始まる · (단계) 表示)が残っていれば移さない。普通の空欄は止めずに Lead pane に知らせる · 終わった後の残りは空欄にせずイシューへ</li>
+          <li>&bull; auto done — 計画書の PR 行の PR がすべてマージされると(GitHub MERGED、base は問わない · direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す。マージせずに閉じた PR は判定から外し、Progress に段階の欄(N단계 で始まる · (단계) 表示)が残っていれば移さない。普通の空欄は止めずに計画書の結果節に書く · 終わった後の残りは空欄にせずイシューへ</li>
           <li>&bull; 途切れたら計画書を一つ読み、いまのブランチ · diff が Work ref と同じかをまず見る</li>
           <li>&bull; Next がいまのコードでも有効か確認してから進める</li>
           <li>&bull; 変わった ref で過去の検証結果を再利用しない</li>

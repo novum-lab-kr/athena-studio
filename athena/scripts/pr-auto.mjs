@@ -425,10 +425,13 @@ const startShadowVerify = (job, config) => {
   try { spawn(process.execPath, args, { cwd: ROOT, detached: true, stdio: 'ignore' }).unref() } catch (error) { console.log(`  ⚠️ 그림자 전체 검증을 못 띄움: ${error.message}`) }
 }
 
-// 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만)
+// 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만).
+// 머지됨은 pane 에 넣지 않는다 — 받은 쪽이 할 일이 없는데 차례 하나를 쓴다(계획서 "- Auto review:" · "- Auto merge:" 줄 · 사건 기록에 이미 있다).
+// 보류 · 검증 대기 · 머지 실패는 그대로 넣는다
 const notifyResult = async (job, result, direct = false) => {
   const planPath = join(ROOT, job.plan)
   if (!existsSync(planPath)) return
+  if (String(result).startsWith(DIRECT_MERGED)) { console.log('  → 머지됨 — 결과는 계획서 줄에만(pane 에 넣지 않는다)'); return }
   const ref = workRefOf(readFileSync(planPath, 'utf8'))
   if (!ref.pane || !(await livePanes()).has(ref.pane)) return
   const agent = ref.agent || '작업 에이전트'

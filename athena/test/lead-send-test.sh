@@ -2,7 +2,7 @@
 # 에이전트 → 아테나 보내기 시험 — scripts/lead-send.py(받을 수 없으면 모아 뒀다 넣기 · 요청은 열지 않음 · 못 넣으면 계획서 기록).
 # 가짜 화면 CLI · 가짜 bin/athena · 임시 본체 사본으로 — 화면 · claude 를 부르지 않는다 · 15초 안팎
 #   바로 보냄 · 선택 창이면 모아 둠 → 닫히면 차례대로 넣음 · 앞에 미룬 글 뒤에 줄 섬
-#   받을 pane 이 닫힘 → 계획서의 명시한 Lead pane 만 허용 / 유일·focused 대체 금지 / 같은 담당 복귀·명시 재배정만 허용
+#   받을 pane 이 닫힘 → 계획서 Lead pane 이 살아 있으면 그쪽 / 담당도 닫혔으면 떠 있는 아테나에게 넘김(focused → 최근 · 계획서 담당 바꿈 · F4) / 없으면 모아 둠
 #   오래 기다림 · 전송 확인 실패(다시 넣지 않음) · 옛 구조는 기록만 · 어느 갈래도 요청(question)을 열지 않음 · 사용법
 #
 # 사용: test/lead-send-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -28,7 +28,7 @@ mkdir -p "$WORK/cli"
 cat > "$WORK/cli/athena-studio-cli" <<'CLIEOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
-case " $(cat "$FAKE_DIR/closed" 2>/dev/null) " in *" $3 "*) [ "$1" = pane ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; } ;; esac
+case " $(cat "$FAKE_DIR/closed" 2>/dev/null) " in *" $3 "*) [ "$1" = pane ] && [ -n "${3:-}" ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; } ;; esac
 case "$1 $2" in
   'pane list') printf '{"panes":%s}\n' "$(cat "$FAKE_DIR/panes" 2>/dev/null || echo '[]')" ;;
   'pane get') echo "{\"pane\":{\"id\":\"$3\"}}" ;;
@@ -201,21 +201,74 @@ check "✅ 출력" "${out:0:1}" "✅"
 check "p3 에 넣음" "$(count "$WORK/sent" '^SENT p3 계획서 아테나로')" 1
 check "요청 없음" "$(count "$WORK/requests")" 0
 
-echo "▶ 닫힌 담당을 유일·focused 다른 대화로 대체하지 않음"
-for layout in single focused; do
-  reset
-  echo p1 > "$WORK/closed"
-  panes p2:codex:body:아테나:true
-  [ "$layout" = single ] || panes p2:codex:body:아테나:true p4:claude:body:아테나:false
-  out="$(lead_send '대체하면 안 되는 글')"
-  check "$layout 대기" "${out:0:1}" "⏳"
-  sleep 2.5
-  check "$layout 다른 대화에 넣지 않음" "$(count "$WORK/sent")" 0
-  # 같은 담당이 돌아오면 대기하던 글이 전달된다.
-  rm -f "$WORK/closed"
-  wait_until '[ "$(queued)" = 0 ]'
-  check "$layout 원래 담당에게 넣음" "$(count "$WORK/sent" '^SENT p1 대체하면 안 되는 글')" 1
-done
+echo "▶ 담당이 닫힘 · 떠 있는 아테나 → 넘기고 계획서 담당을 바꿈(F4 · focused → 가장 최근에 쓴 순)"
+used() { mkdir -p "$DATA/state/pane-sessions"; printf '{"pane":"%s","session":"%s","at":"%s"}\n' "$1" "$2" "$3" > "$DATA/state/pane-sessions/$1.json"; }
+reset
+printf -- '- Lead session: session-old\n' >> "$PLAN"
+echo p1 > "$WORK/closed"
+used p2 session-two 2026-11-26T01:00:00+00:00; used p4 session-four 2026-11-26T02:00:00+00:00
+panes p2:codex:body:아테나:true p4:claude:body:아테나:false p5:claude:body:'🤖 web-fe':false p6:claude:other:아테나:false p9:claude:body:아테나:false
+out="$(lead_send '넘길 글')"; code=$?
+check "종료 0 · ✅" "$code ${out:0:1}" "0 ✅"
+check "보고 있는(focused) 아테나 p2 에 표시를 붙여 넣음" "$(count "$WORK/sent" '^SENT p2 \[이어받음 · 원래 담당 p1 닫힘\] 계획서 plans/task/x.md 넘길 글$')" 1
+check "다른 pane 에는 넣지 않음" "$(count "$WORK/sent")" 1
+check "계획서 Lead pane · Lead session 이 이어받은 아테나로(한 줄씩)" "$(grep -c '^- Lead pane: p2$' "$PLAN") $(grep -c '^- Lead session: session-two$' "$PLAN") $(grep -c '^- Lead ' "$PLAN")" "1 1 2"
+check "사건 lead-takeover" "$(count "$EVENTS" '"type":"lead-takeover"')" 1
+check "요청 없음 · 모아 둔 글 없음" "$(count "$WORK/requests") $(queued)" "0 0"
+# 원래 담당이 돌아와도 담당은 이어받은 아테나 하나 — 다음 글은 표시 없이 p2 로
+rm -f "$WORK/closed"
+lead_send '다음 글' > /dev/null
+check "원래 담당이 돌아와도 이어받은 아테나에게만(표시는 처음 한 번)" "$(count "$WORK/sent" '^SENT p2 다음 글$') $(count "$WORK/sent" '^SENT p1 ')" "1 0"
+rm -f "$DATA/state/pane-sessions/p2.json" "$DATA/state/pane-sessions/p4.json"
+
+reset
+echo p1 > "$WORK/closed"
+used p2 session-two 2026-11-26T01:00:00+00:00; used p4 session-four 2026-11-26T02:00:00+00:00
+panes p2:codex:body:아테나:false p4:claude:body:아테나:false
+lead_send '최근 순 글' > /dev/null
+check "보고 있는 아테나가 없으면 가장 최근에 쓴 아테나 p4" "$(count "$WORK/sent" '^SENT p4 \[이어받음 · 원래 담당 p1 닫힘\] ') $(grep -c '^- Lead pane: p4$' "$PLAN")" "1 1"
+rm -f "$DATA/state/pane-sessions/p2.json" "$DATA/state/pane-sessions/p4.json"
+
+echo "▶ 계획서 폴더 밖 파일은 넘기기로 고쳐 쓰지 않음(.. 통과 · 절대 경로 — 보안 검토)"
+reset
+echo p1 > "$WORK/closed"
+panes p2:claude:body:아테나:true
+printf -- '- Lead pane: p1\n' > "$BODY/outside.md"
+PLAN_REL='plans/../outside.md' lead_send '밖 글 하나' > /dev/null
+PLAN_REL="$BODY/outside.md" lead_send '밖 글 둘' > /dev/null
+check "폴더 밖 파일의 Lead pane 그대로 · 사건 없음" "$(grep -c '^- Lead pane: p1$' "$BODY/outside.md") $(count "$EVENTS" '"type":"lead-takeover"')" "1 0"
+rm -f "$BODY/outside.md"; rm -rf "$DATA/state/lead-send"
+
+echo "▶ 담당이 닫힘 · 떠 있는 아테나 없음 → 모아 뒀다가 아테나가 뜨면 넘김 · 원래 담당이 돌아오면 그쪽으로"
+reset
+echo p1 > "$WORK/closed"
+panes p5:claude:body:'🤖 web-fe':true p6:claude:other:아테나:false
+out="$(lead_send '기다리는 글')"
+check "⏳ 출력" "${out:0:1}" "⏳"
+sleep 2.5
+check "에이전트 pane · 다른 본체 pane 에는 넣지 않음 · 담당 그대로" "$(count "$WORK/sent") $(grep -c '^- Lead pane: p1$' "$PLAN")" "0 1"
+panes p5:claude:body:'🤖 web-fe':true p4:claude:body:아테나:false
+wait_until '[ "$(queued)" = 0 ]'
+check "아테나가 뜨자 표시를 붙여 넘김" "$(count "$WORK/sent" '^SENT p4 \[이어받음 · 원래 담당 p1 닫힘\] 계획서 plans/task/x.md 기다리는 글$') $(grep -c '^- Lead pane: p4$' "$PLAN")" "1 1"
+reset
+echo p1 > "$WORK/closed"
+lead_send '돌아오면 넣을 글' > /dev/null
+sleep 2.5
+rm -f "$WORK/closed"
+wait_until '[ "$(queued)" = 0 ]'
+check "떠 있는 아테나 없이 원래 담당이 돌아오면 그대로 넣음" "$(count "$WORK/sent" '^SENT p1 돌아오면 넣을 글$')" 1
+
+echo "▶ 담당이 살아 있는데 잠깐 못 받음 → 넘기지 않음"
+reset
+touch "$WORK/waiting"
+panes p2:codex:body:아테나:true
+out="$(lead_send '잠깐 못 받는 글')"
+check "⏳ 출력" "${out:0:1}" "⏳"
+sleep 2.5
+check "다른 아테나에 넣지 않음 · 담당 그대로" "$(count "$WORK/sent") $(grep -c '^- Lead pane: p1$' "$PLAN")" "0 1"
+rm -f "$WORK/waiting"
+wait_until '[ "$(queued)" = 0 ]'
+check "창이 닫히자 원래 담당에게" "$(count "$WORK/sent" '^SENT p1 잠깐 못 받는 글$')" 1
 
 echo "▶ 잘못된 인자가 살아 있어도 계획서 담당을 우선"
 reset p3
@@ -223,18 +276,14 @@ out="$(lead_send '명시한 담당으로')"
 check "p3에만 넣음" "$(count "$WORK/sent" '^SENT p3 명시한 담당으로')" 1
 check "p1에는 넣지 않음" "$(count "$WORK/sent" '^SENT p1 ')" 0
 
-echo "▶ 대기 중 명시 재배정만 따라감"
+echo "▶ 대기 중 계획서 재배정을 따라감"
 reset
 touch "$WORK/waiting"
 lead_send '재배정한 글' > /dev/null
-echo p1 > "$WORK/closed"
-panes p2:codex:body:아테나:true
-rm -f "$WORK/waiting"
-sleep 2.5
-check "계획서 변경 전 넣지 않음" "$(count "$WORK/sent")" 0
 sed -i '' 's/Lead pane: p1/Lead pane: p2/' "$PLAN"
+rm -f "$WORK/waiting"
 wait_until '[ "$(queued)" = 0 ]'
-check "계획서 재배정 후 p2에 넣음" "$(count "$WORK/sent" '^SENT p2 재배정한 글')" 1
+check "계획서 재배정 후 p2에 넣음(표시 없이)" "$(count "$WORK/sent" '^SENT p2 재배정한 글$')" 1
 
 echo "▶ 대기 중 같은 pane의 대화가 바뀌면 기록만"
 reset
@@ -324,6 +373,20 @@ check "⚠️ 출력" "${out:0:2}" "⚠️"
 check "요청 없음" "$(count "$WORK/requests")" 0
 check "계획서에 글" "$(grep -c '아테나 pane 이 없어요: 옛 구조 글$' "$PLAN")" 1
 ln -s "$DATA" "$BODY/.pack-data"
+
+echo "▶ 아테나 상태 확인은 맡은 계획서의 pane 만(scripts/screen pane list --mine · F3)"
+cp "$SRC/scripts/screen" "$BODY/scripts/screen"
+reset
+bound() { mkdir -p "$DATA/state/pane-sessions"; printf '{"pane":"%s","plan":"%s"}\n' "$1" "$2" > "$DATA/state/pane-sessions/$1.json"; }
+printf -- '# 남의 일\n\n## Checkpoint\n- Status: in_progress\n- Lead pane: p2\n' > "$BODY/plans/task/y.md"
+bound p5 plans/task/x.md; bound p6 plans/task/y.md
+mkdir -p "$DATA/state/agent-turn"; printf '{"pane":"p5","state":"working","turn":"t1"}\n' > "$DATA/state/agent-turn/p5.json"
+panes p1:claude:body:아테나:true p2:claude:body:아테나:false p5:claude:other:'🤖 web-fe':false p6:claude:other:'🤖 api-be':false p7:claude:other:'🤖 묶이지 않음':false
+mine() { env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID="$1" ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/cli/athena-studio-cli" python3 "$BODY/scripts/screen" pane list --mine --format "${2:-ids}" | tr '\n' ' '; }
+check "p1 이 맡은 계획서의 pane 만" "$(mine p1)" "p5 "
+check "다른 아테나(p2)에게는 그쪽 pane 만" "$(mine p2)" "p6 "
+check "한 줄 형식 — id · 이름표 · 차례 상태 · 계획서" "$(mine p1 brief)" "p5 · 🤖 web-fe · working · plans/task/x.md "
+rm -f "$DATA/state/pane-sessions/p5.json" "$DATA/state/pane-sessions/p6.json" "$DATA/state/agent-turn/p5.json" "$BODY/plans/task/y.md"
 
 echo "▶ 사용법"
 lead_send > /dev/null 2>&1; check "글 없음 → 2" "$?" 2

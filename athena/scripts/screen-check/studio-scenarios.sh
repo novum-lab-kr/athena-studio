@@ -60,6 +60,10 @@ sc_studio_ops() {
   step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 보고" --enter
   step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 --enter
   step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 글 --enter 더
+  # 시작 확인 — 차례 상태 파일이 없는 구조(시험 사본에는 .pack-data 가 없다)는 기다리지 않고 idle 한 줄
+  step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 지시" --enter --wait-start
+  step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 글 --wait-start
+  step studio "${IN_STUDIO[@]}" -- $S pane wait-start p2 --timeout 0
   step studio "${IN_STUDIO[@]}" -- $S pane send-keys p2 C-c Enter
   step studio "${IN_STUDIO[@]}" -- $S pane rename p9 "📋 현황판"
   step studio "${IN_STUDIO[@]}" -- $S pane close p9

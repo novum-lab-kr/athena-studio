@@ -57,6 +57,9 @@ esac
 GHEOF
 chmod +x "$WORK/bin/gh"
 export FAKE_LOG="$WORK/log"; : > "$FAKE_LOG"
+# 바깥 pane 환경이 시험에 새지 않게 — 시험을 돌리는 세션이 headless(CLAUDE_CODE_ENTRYPOINT=sdk…)면 입력 훅이 아무것도 안 하고(F1 사례 3건 실패 · 2026-11-26 전체 검증),
+# 에이전트가 띄운 reviewer pane(ATHENA_REVIEW_FROM_AGENT=1)이면 reviewer 끝 알림 사례가 모두 걸러진다. 필요한 사례는 그 줄에서 직접 준다
+unset CLAUDE_CODE_ENTRYPOINT ATHENA_REVIEW_FROM_AGENT
 
 hook() {   # <prompt|stop> [입력 JSON] — 에이전트 pane p9 에서
   local input="${2:-}"; [ -n "$input" ] || input='{}'
@@ -173,8 +176,9 @@ hook prompt '{"prompt":"지움"}'; hook stop
 sed -i.bak 's/^- Status:.*/- Status: in_progress/' "$BODY/$PLAN"
 
 CLOSED="p1"; hook prompt '{"prompt":"또2"}'; hook stop; echo "  (아테나 pane 닫힘 — 오류 없이 끝)"
-check "아테나 pane 이 닫혔으면 보내지 않고 조용히 넘어간다" "$(sent)" 7
+check "아테나 pane 이 닫혔고 떠 있는 아테나도 없으면 넣지 않고 모아 둔다(lead-send 대기열 — 아테나가 뜨면 넘긴다 · F4)" "$(sent) $(ls "$DATA/state/lead-send" 2>/dev/null | grep -c '^p1-.*\.json$')" "7 1"
 CLOSED=""
+rm -rf "$DATA/state/lead-send"   # 모아 둔 글이 뒤 사례의 차례를 막지 않게(처리기는 폴더가 없어지면 끝난다)
 
 sed -i.bak '/^- Lead pane:/d' "$BODY/$PLAN"
 hook prompt '{"prompt":"또3"}'; hook stop
@@ -361,5 +365,74 @@ check "요약은 5줄 · 줄당 120자 · 전체 480자 상한" "$(last_sent | p
 before="$(sent)"
 hook stop '{"last_assistant_message":"다른 보고"}'
 check "같은 차례에 요약만 달라진 Stop 은 다시 넣지 않는다(중복 막기는 요약을 뺀 줄)" "$(sent)" "$before"
+
+# 조용한 끝 알림(토큰 절감 C1 · C2 · 2026-11-26) — 레포 하나짜리 계획서의 형식 맞는 끝 줄은 아테나 pane 에 넣지 않고 차례 상태 파일에 done_notice 만
+mkdir -p "$BODY/pack"
+cat > "$BODY/pack/pack.json" <<'PACKEOF'
+{"name": "t", "repos": [{"name": "athena-studio", "path": "repos/athena-studio", "agents": ["athena-studio-fe"]}, {"name": "api", "path": "repos/api", "agents": ["api-be"]}]}
+PACKEOF
+printf -- '- Agent: athena-studio-fe\n' >> "$BODY/$PLAN"
+done_notice() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])).get("done_notice") or {}; print(d.get(sys.argv[2]))' "$DATA/state/agent-turn/p9.json" "$1"; }
+quiet_events() { cat "$DATA/state/events.jsonl" "$BODY/.events.jsonl" 2>/dev/null | grep -c '"type":"agent.done.quiet"'; }
+hook prompt '{"prompt":"조용 1"}'; before="$(sent)"; before_notices="$(notices)"
+hook stop '{"last_assistant_message":"## 1. 무엇이 달라졌나\n- 버튼 문구 고침\n\n## 2. 어디서 확인하나\n- PR #7 (draft)"}'
+check "레포 하나짜리 계획서의 형식 맞는 끝 줄은 아테나 pane 에 넣지 않는다" "$(sent)" "$before"
+check "받음 확인 기록도 만들지 않는다(현황판이 다시 넣지 않게)" "$(notices)" "$before_notices"
+check "차례 상태 파일에 done_notice(요약 · 계획서)" "$(turn state) $(done_notice summary) $(done_notice plan)" "done 버튼 문구 고침 / PR #7 (draft) $PLAN"
+check "done_notice 줄은 끝 줄 그대로" "$(done_notice line | grep -c '\[athena-studio-fe → 아테나\] 끝 · p9 · 계획서 plans/task/x.md')" 1
+check "사건 agent.done.quiet" "$(quiet_events)" 1
+first_id="$(done_notice id)"
+hook stop '{"last_assistant_message":"## 1. 무엇이 달라졌나\n- 버튼 문구 고침\n\n## 2. 어디서 확인하나\n- PR #7 (draft)"}'
+check "같은 차례 Stop 이 다시 와도 알림을 새로 만들지 않는다" "$(done_notice id) $(quiet_events)" "$first_id 1"
+hook prompt '{"prompt":"조용 2"}'
+check "다음 입력에서 done_notice 를 지운다" "$(done_notice id)" None
+hook stop '{"last_assistant_message":"⏸ 멈춤: 사용자 확인 — 넘겨 를 기다림"}'
+check "멈춤은 레포 하나짜리여도 아테나로" "$(sent) $(last_sent | grep -c '⏸ 멈춤 · p9')" "$((before + 1)) 1"
+hook prompt '{"prompt":"조용 3"}'; hook stop '{"last_assistant_message":"고쳤어요.\n커밋할까요?"}'
+check "질문으로 끝내면 아테나로" "$(sent) $(last_sent | grep -c '질문으로 멈춤 · p9')" "$((before + 2)) 1"
+hook prompt '{"prompt":"조용 4"}'; hook stop '{}'
+check "요약을 못 뽑은 끝 줄은 아테나로" "$(sent) $(last_sent | grep -c '\] 끝 · p9')" "$((before + 3)) 1"
+sed -i.bak 's/^- Status:.*/- Status: blocked/' "$BODY/$PLAN"
+hook prompt '{"prompt":"조용 5"}'; hook stop '{"last_assistant_message":"검증이 실패해 멈췄어요."}'
+check "Status blocked 는 아테나로" "$(sent) $(last_sent | grep -c 'Status blocked')" "$((before + 4)) 1"
+sed -i.bak 's/^- Status:.*/- Status: ready_for_review/' "$BODY/$PLAN"
+printf '\n## 6. 작업 배분\n| 담당 | 할 일 |\n|---|---|\n| athena-studio-fe | 화면 |\n| api-be | API |\n' >> "$BODY/$PLAN"
+hook prompt '{"prompt":"조용 6"}'; hook stop '{"last_assistant_message":"화면 몫을 끝냈어요."}'
+check "여러 에이전트 계획서의 끝 줄은 아테나로(다음 단계를 아테나가 넘긴다)" "$(sent) $(last_sent | grep -c '\] 끝 · p9 · .* — 요약: 화면 몫을 끝냈어요.$')" "$((before + 5)) 1"
+python3 - "$BODY/$PLAN" <<'PYEOF'
+import re, sys
+path = sys.argv[1]; text = open(path, encoding='utf-8').read()
+open(path, 'w', encoding='utf-8').write(re.sub(r'\n## 6\. 작업 배분.*', '\n', text, flags=re.S))
+PYEOF
+mv "$BODY/pack/pack.json" "$BODY/pack/pack.json.off"
+hook prompt '{"prompt":"조용 7"}'; hook stop '{"last_assistant_message":"설정 없이 끝냈어요."}'
+check "에이전트 목록을 못 읽으면 아테나로" "$(sent)" "$((before + 6))"
+mv "$BODY/pack/pack.json.off" "$BODY/pack/pack.json"
+AGENT=reviewer hook prompt '{"prompt":"리뷰 1"}'; AGENT=reviewer hook stop '{"last_assistant_message":"리뷰 결론: 승인"}'
+check "아테나가 띄운 reviewer 의 끝 줄은 레포 하나짜리여도 아테나로" "$(sent) $(last_sent | grep -c '\[reviewer → 아테나\] 끝 · p9')" "$((before + 7)) 1"
+AGENT=reviewer hook prompt '{"prompt":"리뷰 2"}'; AGENT=reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"리뷰 결론: 승인 2"}'
+check "에이전트 pane 이 띄운 reviewer 의 끝 줄은 넣지 않는다(C2)" "$(sent) $(turn state) $(done_notice id)" "$((before + 7)) done None"
+AGENT=reviewer hook prompt '{"prompt":"리뷰 3"}'; AGENT=reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"⏸ 멈춤: 범위 확인 필요"}'
+check "에이전트가 띄운 reviewer 도 멈춤은 아테나로" "$(sent) $(last_sent | grep -c '\[reviewer → 아테나\] ⏸ 멈춤 · p9')" "$((before + 8)) 1"
+
+# 끝난 작업을 맡은 아테나의 다음 입력에 붙이기(F1) — 아테나 pane 입력 훅(pane-session.py)이 차례 상태 파일의 done_notice 를 읽는다
+cp "$SRC/scripts/hooks/pane-session.py" "$BODY/scripts/hooks/"
+lead_prompt() {   # <아테나 pane> — 그 pane 이 입력을 받았을 때 훅이 붙이는 글
+  printf '{"prompt":"상황 알려줘","session_id":"11111111-2222-3333-4444-555555555555"}' | env -u ATHENA_AGENT ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID="$1" ATHENA_STUDIO_SOCKET=/x \
+    ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" FAKE_LOG="$FAKE_LOG" PATH="$WORK/bin:$PATH" python3 "$BODY/scripts/hooks/pane-session.py" 2>/dev/null \
+    | python3 -c 'import json,sys; raw=sys.stdin.read().strip(); print(json.loads(raw)["hookSpecificOutput"]["additionalContext"] if raw else "")'
+}
+hook prompt '{"prompt":"붙이기 1"}'; hook stop '{"last_assistant_message":"첫 작업을 끝냈어요."}'
+check "다른 아테나 pane(p2)의 입력에는 붙이지 않는다(맡은 계획서만)" "$(lead_prompt p2 | grep -c '끝 · p9')" 0
+attached="$(lead_prompt p1)"
+check "맡은 아테나(p1)의 다음 입력에 끝 줄 + 요약 한 줄" "$(printf '%s\n' "$attached" | grep -c '^\[athena-studio-fe → 아테나\] 끝 · p9 · 계획서 plans/task/x.md · .* — 요약: 첫 작업을 끝냈어요.$')" 1
+check "붙인 뒤에도 현황판 · 트레이가 읽는 done_notice 는 그대로" "$(done_notice summary)" "첫 작업을 끝냈어요."
+check "같은 줄을 두 번 붙이지 않는다" "$(lead_prompt p1 | grep -c '끝 · p9')" 0
+# 아테나가 입력을 받기 전에 에이전트가 다음 일을 받아도(done_notice 가 지워져도) 끝난 작업 줄이 남는다 — 누락 점검 ③
+hook prompt '{"prompt":"붙이기 2"}'; hook stop '{"last_assistant_message":"둘째 작업을 끝냈어요."}'
+hook prompt '{"prompt":"붙이기 3"}'; hook stop '{"last_assistant_message":"셋째 작업을 끝냈어요."}'
+attached="$(lead_prompt p1)"
+check "보이기 전에 지워진 끝 줄도 다음 입력에 붙는다(둘 다)" "$(printf '%s\n' "$attached" | grep -c '요약: 둘째 작업을 끝냈어요.$') $(printf '%s\n' "$attached" | grep -c '요약: 셋째 작업을 끝냈어요.$')" "1 1"
+check "붙인 것은 비운다" "$(lead_prompt p1 | grep -c '끝 · p9') $(turn done_missed)" "0 []"
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

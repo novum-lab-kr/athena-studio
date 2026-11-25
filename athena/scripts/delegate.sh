@@ -154,7 +154,7 @@ else
 fi
 # 아테나가 지금 못 받으면(질문 · 고르기 창) lead-send.py 가 모아 뒀다 넣고, 아테나 pane 이 닫혔으면 명시한 담당을 기다리고 · 못 넣으면 계획서에 기록한다(GitHub 이슈 #134) —
 # 요청은 열지 않는다(고를 것 없는 질문이 [작업]에 쌓이지 않게 · 2026-11-03). 명령 자체가 실패했을 때만 에이전트가 계획서에 적는다
-LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 닫혔으면 같은 담당의 복귀 또는 계획서의 명시한 재배정을 기다리고, 넣지 못하면 계획서 결과 절에 기록한다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
+LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 닫혔으면 떠 있는 아테나에게 넘기거나(계획서 Lead pane 을 바꾼다) 없으면 모아 두고, 넣지 못하면 계획서 결과 절에 기록한다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
@@ -571,6 +571,8 @@ PYEOF
   [ "$ENGINE" != codex ] || echo "export ATHENA_CODEX_CONTEXT=$(shq "$SETTINGS_FILE.context.json")"
   # 지시 없이 띄운 첫 안내는 작업 완료가 아니다 — 실제 요청을 받은 턴부터 끝 알림을 보낸다.
   echo "export ATHENA_NOTIFY_BOOTSTRAP=$NOTIFY_BOOTSTRAP"
+  # 에이전트 pane 이 띄운 reviewer — 끝 줄을 아테나에 넣지 않는다(결론은 계획서 줄 · 띄운 작업자가 review-wait.sh 로 받는다 · agent-done-notify.py C2)
+  [ -z "${ATHENA_AGENT:-}" ] || { [ "$AGENT" != reviewer ] && [ "$AGENT" != security-reviewer ]; } || echo "export ATHENA_REVIEW_FROM_AGENT=1"
   # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
   echo "export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
@@ -646,7 +648,9 @@ except Exception:
 PYEOF
 )"
   UNDO="$(python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" link "$ATHENA_DIR" "$PANE" "$PLAN")" || { echo "pane 기록을 새 계획서로 잇지 못해 보내지 않는다" >&2; exit 1; }
-  if ! "$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter >/dev/null; then
+  # --wait-start — 받은 pane 이 새 차례를 시작했는지까지 이 명령이 확인한다(끝줄 "시작 확인:" · 따로 sleep · pane read 하지 않게)
+  # 아테나 pane 이 불렀을 때만 기다린다 — 현황판 · pr-auto 는 이 스크립트에 30~60초 한도를 건다
+  if ! START_STATE="$("$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter ${LEAD_PANE:+--wait-start})"; then
     python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" rollback "$ATHENA_DIR" "$PANE" "$UNDO" || true
     echo "pane $PANE 에 보내지 못했다(pane 기록은 되돌렸다)" >&2; exit 1
   fi
@@ -746,6 +750,13 @@ node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" e
 if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
 echo "$SHIP_LINE"
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
+# 시작 확인 — 새 pane 은 첫 지시로 차례가 생길 때까지, 이어 보내기는 위에서 이미 기다렸다(scripts/lib/screen.py wait_start).
+# 아테나가 보낸 뒤 sleep · pane read 로 따로 확인하지 않게 한 줄로 알린다. 확인하지 못해도 띄우기는 그대로
+# 아테나 pane 이 불렀을 때만(현황판 · pr-auto · 에이전트 pane 의 reviewer 띄우기는 기다리지 않는다). 새 claude 는 뜨는 데 시간이 걸려 30초까지
+if [ -z "${START_STATE:-}" ] && [ -n "$LEAD_PANE" ]; then
+  START_STATE="$("$SCREEN" pane wait-start "$PANE" --timeout "$(( ${ATHENA_WAIT_START_SECONDS:-30} * 1000 ))" 2>/dev/null)" || START_STATE=""
+fi
+[ -z "$START_STATE" ] || echo "   시작 확인: $START_STATE"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
 if [ "$ROLE" = reviewer ] && [ "$AGENT" != security-reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
 

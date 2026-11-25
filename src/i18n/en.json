@@ -404,6 +404,8 @@
   "tray.paused": "Notifications off until {time} — turn back on from ☰",
   "notify.waiting.title": "input required",
   "notify.waiting.body": "{who} — permission prompt",
+  "notify.done.title": "done",
+  "notify.done.body": "{who} — {summary}",
   "notify.bundle": "{title} (+{count})",
   "pack.title": "Packs",
   "pack.rail.add": "New pack · Import · Export",

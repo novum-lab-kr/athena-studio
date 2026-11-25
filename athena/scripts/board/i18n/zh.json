@@ -459,6 +459,7 @@
   "issue.actionsWaiting": "Actions 等待",
   "issue.doneReady": "可以完成",
   "issue.inputWait": " · 等待输入",
+  "issue.paneDone": "🤖 {agent} 完成",
   "issue.noOwner": "未指定负责人",
   "issue.noPane": "{agent} · 无 pane",
   "issue.titleHint": "点击可查看请求·进展·结果",

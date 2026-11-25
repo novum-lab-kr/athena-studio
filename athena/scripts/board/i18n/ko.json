@@ -459,6 +459,7 @@
   "issue.actionsWaiting": "Actions 대기",
   "issue.doneReady": "완료 가능",
   "issue.inputWait": " · 입력 대기",
+  "issue.paneDone": "🤖 {agent} 끝",
   "issue.noOwner": "담당 미정",
   "issue.noPane": "{agent} · pane 없음",
   "issue.titleHint": "누르면 요청·진행·결과를 볼 수 있어요",

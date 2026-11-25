@@ -2140,6 +2140,7 @@
     if (handoff) pills.push(handoff === 'failed' ? `<span class="pill bad">${t('issue.actionsFailed')}</span>` : `<span class="pill working">${handoff === 'running' ? t('issue.actionsRunning') : t('issue.actionsWaiting')}</span>`);
     if (card.doneCheck?.ready) pills.push(`<span class="pill ready">${t('issue.doneReady')}</span>`);
     for (const pane of running) pills.push(`<span class="pill ${({ working: 'working', waiting: 'waiting' })[pane.status] || ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}${pane.status === 'waiting' ? t('issue.inputWait') : ''}</span>`);
+    for (const pane of running) if (pane.done) pills.push(`<span class="pill ready" title="${esc(pane.done.summary)}">${t('issue.paneDone', { agent: esc(pane.agent) })}</span>`);
     if (!running.length) pills.push(`<span class="pill">${t('issue.noPane', { agent: card.agent ? `🤖 ${esc(card.agent)}` : t('issue.noOwner') })}</span>`);
     return pills.join('');
   };

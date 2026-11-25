@@ -123,7 +123,7 @@ PORT=$((47900 + RANDOM % 90))
 SERVER_PID=$!
 athena_test_guard "$SERVER_PID"
 for _ in $(seq 1 100); do
-  grep -q '자동 완료 — 남은 빈 칸' "$SCREEN_LOG" && ls "$CORE/issues" | grep -q 'demo-old' && break
+  grep -q '남은 빈 칸 2개' "$CORE/plans/task/20261101-plain.md" && ls "$CORE/issues" | grep -q 'demo-old' && break
   sleep 0.2
 done
 # 이슈 목록은 수집 앞쪽에서 읽으니 새 이슈 카드는 다음 주기에 나온다
@@ -154,7 +154,8 @@ const sent = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).ma
   // 글 넣기는 공통 전송 경로(scripts/screen pane send-text --enter → 데몬 CLI pane run)
   .filter((args) => args[1] === 'pane' && args[2] === 'run')
 const notes = sent.filter((args) => args[4]?.startsWith('[현황판 → 아테나]'))
-check('일반 칸을 남긴 계획서만 Lead pane 에 한 줄 — 계획서 · 남은 칸 수', notes.length === 1 && notes[0][3] === 'p1' && notes[0][4] === '[현황판 → 아테나] plans/task/20261101-plain.md 자동 완료 — 남은 빈 칸 2개', JSON.stringify(sent))
+check('일반 칸을 남긴 자동 완료는 아테나 pane 에 넣지 않는다(할 일 없는 알림)', notes.length === 0, JSON.stringify(sent))
+check('남은 칸 수는 그 계획서 Status 설명에만', /^- Status: done — 자동 — .* · 남은 빈 칸 2개$/m.test(plan('20261101-plain')) && !/남은 빈 칸/.test(plan('20261101-empty')), plan('20261101-plain').match(/^- Status:.*$/m)?.[0])
 
 console.log('── 이어 갈 이슈')
 const files = readdirSync(join(core, 'issues')).sort()

@@ -459,6 +459,7 @@
   "issue.actionsWaiting": "Actions 待機",
   "issue.doneReady": "完了できます",
   "issue.inputWait": " · 入力待ち",
+  "issue.paneDone": "🤖 {agent} 完了",
   "issue.noOwner": "担当未定",
   "issue.noPane": "{agent} · pane なし",
   "issue.titleHint": "クリックで依頼・進行・結果を見られます",

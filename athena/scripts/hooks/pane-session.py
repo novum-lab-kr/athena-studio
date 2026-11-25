@@ -35,6 +35,21 @@ def headless_claude() -> bool:
     return os.environ.get('CLAUDE_CODE_ENTRYPOINT', '').startswith('sdk')
 
 
+DONE_HEAD = '맡은 작업 중 끝난 것(이 pane 에 따로 넣지 않은 끝 알림 — 사용자가 물으면 이 요약과 계획서 Checkpoint 로 답하고 pane 화면을 다시 읽지 않는다):'
+
+
+def plan_lead(plan: str) -> str:
+    """계획서(본체 기준 논리 경로)의 "- Lead pane:" 첫 낱말 — 못 읽으면 ''"""
+    path = agent_turn.plan_path(plan)
+    if path is None:
+        return ''
+    try:
+        found = re.search(r'^- Lead pane:[ \t]*(\S+)', path.read_text(encoding='utf-8'), re.M)
+    except OSError:
+        return ''
+    return found.group(1) if found else ''
+
+
 def main() -> None:
     if '--tool=codex' not in sys.argv and headless_claude():
         return
@@ -55,6 +70,13 @@ def main() -> None:
         try:
             # 아테나 pane 이 받은 입력 — 그 안에 든 에이전트 알림을 받음으로 표시한다(현황판이 안 받은 알림만 다시 넣는다 · lib/agent_turn.py)
             agent_turn.mark_received(pane, event['prompt'])
+        except Exception:
+            pass
+        try:
+            # 맡은 계획서(Lead pane 이 이 pane)의 끝난 작업 — 아테나 pane 에 넣지 않은 끝 줄을 이 입력에 한 줄씩 붙인다(깨우지 않고도 알게 · 토큰 절감 F1)
+            done = agent_turn.take_done_notices(pane, plan_lead)
+            if done:
+                notice = '\n'.join(filter(None, [notice, DONE_HEAD, *done]))
         except Exception:
             pass
     try:

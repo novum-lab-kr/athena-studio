@@ -8,8 +8,10 @@
 - 보냈다 → 끝
 - 아테나 pane 이 살아 있는데 지금 못 받는다(질문 · 고르기 창 · 다른 전송 중) → 대기열에 두고, 뒤에서 처리기가
   창이 닫히면 들어온 차례대로 넣는다. 앞에 미룬 글이 있으면 새 글도 뒤에 줄 선다(차례를 지킨다)
-- 담당은 계획서 "- Lead pane:"가 우선이다. 없으면 명시한 인자를 쓴다. 유일/focused pane 으로 대체하지 않는다.
-- 담당이 닫혔다 → 원래 담당 또는 계획서에 명시적으로 재배정한 담당을 기다린다.
+- 담당은 계획서 "- Lead pane:"가 우선이다. 없으면 명시한 인자를 쓴다. 담당이 살아 있으면 유일/focused pane 으로 대체하지 않는다.
+- 담당(계획서 Lead pane)이 닫혔다 → 떠 있는 아테나에게 넘기고 계획서 Lead pane · Lead session 을 그 아테나로 바꾼다(2026-11-26 사용자 결정).
+  여럿이면 사용자가 보고 있는(focused) 아테나 → 가장 최근에 쓴 아테나. 넘기는 글 앞에 `[이어받음 · 원래 담당 <pane> 닫힘] 계획서 <경로>` 를 붙인다.
+  떠 있는 아테나가 없으면 같은 담당 앞으로 모아 두고 기다린다(떠 있는 아테나가 생기면 그때 넘긴다). 살아 있는데 잠깐 못 받는 담당은 넘기지 않는다.
 - 계획서 Lead session 또는 대기열에 저장한 대화가 달라졌다 → 새 대화로 넣지 않고 기록한다.
 - 기록만 — 전송을 확인하지 못했다(글이 입력칸에 남았을 수 있어 다시 넣지 않는다) · 담당 대화가 달라졌다 · 6시간을 넘겼다 ·
   옛 구조(팩 데이터 없음)에서 못 보냈다 → 계획서 결과 절에 글 그대로 한 줄 + 사건 기록(state/events.jsonl `lead-send-unsent`)
@@ -74,11 +76,9 @@ def alive(pane: str) -> bool:
 
 
 def plan_file(plan: str):
-    """계획서 실제 파일 — 본체 기준 논리 경로(plans/…md) · 절대 경로 모두. 없으면 None"""
-    if not plan or not plan.endswith('.md'):
-        return None
-    path = pathlib.Path(plan) if os.path.isabs(plan) else ATHENA_DIR / plan
-    return path if path.is_file() else None
+    """계획서 실제 파일 — 본체 기준 논리 경로(plans/…md) · 절대 경로 모두. 이 본체 계획서 폴더 밖이거나 없으면 None
+    (에이전트가 넘긴 값이라 읽기 · 고쳐 쓰기 모두 폴더 안으로 묶는다 — agent_turn.plan_path)"""
+    return agent_turn.plan_path(plan)
 
 
 def plan_lead(plan: str) -> str:
@@ -143,12 +143,81 @@ def lead_target(lead: str, plan: str, me: str, session: str = '') -> str:
     target = planned or lead
     if target == me:
         return WRONG_SESSION
+    if not alive(target):
+        return NO_LEAD   # 닫힌 담당은 대화 대조보다 먼저 — 떠 있는 아테나에게 넘기거나(take_over) 모아 둔다
     expected = plan_session(plan) if planned else ''
     if not expected and target == lead:
         expected = session
     if expected and pane_session(target) != expected:
         return WRONG_SESSION
-    return target if alive(target) else NO_LEAD
+    return target
+
+
+def floating_leads(skip: set) -> list:
+    """떠 있는 이 본체의 아테나 pane — 사용자가 보고 있는(focused) 것 먼저, 그다음 가장 최근에 쓴 순(pane-sessions 기록의 at — 입력마다 새로 적힌다).
+    아테나 판정은 caller_lead 와 같다(claude · codex · cwd 가 본체 · 위임 이름표 🤖 아님). 목록을 못 읽으면 []"""
+    try:
+        panes = screen.get_backend().list_panes(timeout=5)
+    except Exception:
+        return []
+    base = pane_request.pack_state()
+    found = []
+    for pane in panes:
+        pane_id = str(pane.get('id') or '')
+        name = str(pane.get('label') or pane.get('name') or pane.get('pane_title') or '')
+        if (not PANE_ID.fullmatch(pane_id) or pane_id in skip or pane.get('agent') not in ('claude', 'codex') or name.startswith('🤖')
+                or not pane.get('cwd') or os.path.realpath(str(pane.get('cwd'))) != str(ATHENA_DIR)):
+            continue
+        used = ''
+        if base is not None:
+            try:
+                used = str(json.loads((base / 'pane-sessions' / f'{pane_id}.json').read_text(encoding='utf-8')).get('at') or '')
+            except (OSError, ValueError):
+                used = ''
+        found.append((bool(pane.get('focused')), used, pane_id))
+    return [pane_id for _focused, _used, pane_id in sorted(found, reverse=True)]
+
+
+def takeover_head(closed: str, plan: str) -> str:
+    return f'[이어받음 · 원래 담당 {closed} 닫힘] 계획서 {plan} '
+
+
+def take_over(plan: str, me: str) -> tuple[str, str]:
+    """담당 아테나(계획서 Lead pane)가 닫혔을 때 떠 있는 아테나에게 넘긴다(2026-11-26 사용자 결정 — 계획서 D3 · F4) — (새 담당, 닫힌 담당).
+    계획서의 Lead pane · Lead session 을 새 담당으로 바꾼다(그 뒤 담당은 이어받은 아테나 하나 — 원래 담당이 돌아와도 둘이 되지 않는다).
+    떠 있는 아테나가 없거나 계획서에 Lead pane 줄이 없으면 ('', '') — 지금처럼 모아 둔다. 살아 있는데 잠깐 못 받는 담당은 여기 오지 않는다"""
+    path = plan_file(plan)
+    closed = plan_lead(plan)
+    if path is None or not closed or alive(closed):
+        return '', ''
+    picked = (floating_leads({closed, me}) or [''])[0]
+    if not picked:
+        return '', ''
+    session = pane_session(picked)
+    moved = []
+
+    def rebind(text: str) -> str:
+        now = re.search(r'^- Lead pane:[ \t]*(\S+)', text, re.M)
+        if not now or now.group(1) != closed:
+            return text   # 그새 다른 쪽이 담당을 바꿨다 — 그 값을 따른다
+        moved.append(picked)
+        text = re.sub(r'^- Lead pane:[^\n]*$', f'- Lead pane: {picked}', text, count=1, flags=re.M)
+        text = re.sub(r'^- Lead session:[^\n]*\n', '', text, flags=re.M)
+        if session:
+            text = re.sub(r'^(- Lead pane:[^\n]*\n)', lambda found: f'{found.group(1)}- Lead session: {session}\n', text, count=1, flags=re.M)
+        return text
+    try:
+        update_plan(str(path), rebind)
+    except Exception:
+        return '', ''
+    if not moved:
+        return '', ''
+    try:
+        subprocess.run(['node', str(ATHENA_DIR / 'scripts' / 'lib' / 'events.mjs'), 'lead-takeover', f'plan={plan}', f'from={closed}', f'to={picked}'],
+                       capture_output=True, text=True, timeout=10)
+    except Exception:
+        pass   # 사건 기록 실패는 무시
+    return picked, closed
 
 
 def try_send(lead: str, text: str) -> str:
@@ -286,6 +355,13 @@ def send(lead: str, text: str, plan: str, tracked: bool = False, note: bool = Fa
         entry['track'] = True
     folder = queue_dir()
     target = lead_target(lead, plan, me)
+    if target == NO_LEAD:
+        # 담당이 닫혔다 — 떠 있는 아테나가 있으면 넘기고 담당을 바꾼다(없으면 아래에서 지금처럼 모아 둔다)
+        picked, closed = take_over(plan, me)
+        if picked:
+            text = takeover_head(closed, plan) + text
+            entry['text'] = text
+            target = lead_target(lead, plan, me)
     if target == WRONG_SESSION:
         return recorded(entry, SESSION_REASON)
     moved = f'계획서 담당 아테나 pane {target} 에 ' if target not in (lead, NO_LEAD) else f'아테나 pane {lead} 에 '
@@ -327,7 +403,7 @@ def send(lead: str, text: str, plan: str, tracked: bool = False, note: bool = Fa
     if result == 'wait':
         spawn_deliverer(key)
         if target == NO_LEAD:
-            print(f'⏳ 담당 아테나 pane {key} 가 없어 모아 뒀다 — 같은 담당의 복귀 또는 계획서의 명시한 재배정을 기다린다. 요청을 따로 열지 않는다')
+            print(f'⏳ 담당 아테나 pane {key} 가 닫혔고 떠 있는 아테나도 없어 모아 뒀다 — 아테나가 뜨면 그쪽으로 넘긴다. 요청을 따로 열지 않는다')
         else:
             print(f'⏳ {moved}지금 못 넣어(질문 · 고르기 창 · 앞에 미룬 글) 모아 뒀다 — 받을 수 있게 되면 저절로 넣는다. 요청을 따로 열지 않는다')
         return 0
@@ -372,6 +448,12 @@ def deliver(lead: str) -> None:
             else:
                 # 대기 중에도 명시한 담당과 대화 소유권을 다시 확인한다
                 target = lead_target(lead, str(entry.get('plan') or ''), str(entry.get('pane') or ''), str(entry.get('session') or ''))
+                if target == NO_LEAD:
+                    # 기다리는 동안 담당이 닫혔다(또는 처음부터 없었다) — 떠 있는 아테나가 생기면 넘긴다
+                    picked, closed = take_over(str(entry.get('plan') or ''), str(entry.get('pane') or ''))
+                    if picked:
+                        entry['text'] = takeover_head(closed, str(entry.get('plan') or '')) + str(entry.get('text') or '')
+                        target = lead_target(lead, str(entry.get('plan') or ''), str(entry.get('pane') or ''), str(entry.get('session') or ''))
                 if target == WRONG_SESSION:
                     result = SESSION_REASON
                 elif target == NO_LEAD:

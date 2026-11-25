@@ -380,20 +380,8 @@ const checkLearnJev = () => {
   }).catch((error) => console.error(`⚠️ Jev 학습 후보 점검 실패: ${error.message}`)).finally(() => { learnJevRunning = false })
 }
 
-// 일반 빈 칸을 남기고 자동 완료했으면 맡긴 아테나 pane 에 한 줄 — 수집이 끝난 뒤 보낸다(sendToPane 은 snapshot 의 pane 목록을 본다 · flushLeftover)
-const leftoverNotes = []
-const noteLeftover = (plan) => {
-  if (plan.progress?.open) leftoverNotes.push({ pane: plan.leadPane, text: `[현황판 → 아테나] ${plan.id} 자동 완료 — 남은 빈 칸 ${plan.progress.open}개` })
-}
-const flushLeftover = async () => {
-  // 끝난 pane 을 닫은 알림도 같은 길로(closeFinishedPanes)
-  for (const note of [...leftoverNotes.splice(0), ...closeNotes.splice(0)]) {
-    // Lead pane 이 닫혔거나 없으면 떠 있는 아테나 pane 으로
-    let result = note.pane ? await sendToPane(note.pane, note.text) : '맡긴 pane 없음'
-    if (typeof result === 'string') result = await sendToPane('hermes', note.text)
-    if (typeof result === 'string') console.log(`⚠️ 아테나 알림 실패: ${note.text} — ${result}`)
-  }
-}
+// 일반 빈 칸을 남기고 자동 완료했으면 Status 설명 끝에 남은 칸 수를 적는다 — 아테나 pane 에는 넣지 않는다(할 일 없는 알림이 차례 하나를 쓴다 · 2026-11-26)
+const leftoverNote = (plan) => (plan.progress?.open ? ` · 남은 빈 칸 ${plan.progress.open}개` : '')
 const openStepsNoted = new Set() // 보류 알림은 PR 묶음마다 한 번만(매 3초 같은 줄을 찍지 않게)
 const autoDonePlans = async (plans, panesAvailable) => {
   // pane 목록을 읽지 못하면 닫힘을 확인할 수 없다.
@@ -407,7 +395,7 @@ const autoDonePlans = async (plans, panesAvailable) => {
     const counted = infos.filter((info) => info.state !== 'CLOSED')
     if (!counted.length || counted.some((info) => info.state !== 'MERGED')) return
     // 남은 단계 칸(`N단계` · `(단계)` 표시 — 2026-11-01)이 있으면 옮기지 않는다 — 단계마다 PR 을 나눠 올리는 계획서가 단계 PR 을 머지한 틈마다
-    // 완료(그 뒤 자동 보관)되던 것(2026-10-27). 일반 빈 칸은 막지 않고 Lead pane 에 알린다(plan-bind.mjs · noteLeftover)
+    // 완료(그 뒤 자동 보관)되던 것(2026-10-27). 일반 빈 칸은 막지 않고 Status 설명에 남은 칸 수를 적는다(plan-bind.mjs · leftoverNote)
     if (hasOpenSteps(plan.progress)) {
       const key = `${plan.id}@${mergedMark(counted)}`
       if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 단계 칸 ${plan.progress.steps}개`) }
@@ -421,13 +409,12 @@ const autoDonePlans = async (plans, panesAvailable) => {
     // 마지막으로 머지된 PR 을 사유에 적는다
     const last = counted.reduce((latest, info) => (info.mergedAt > latest.mergedAt ? info : latest))
     const merged = last.mergedAt ? new Date(last.mergedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16) : ''
-    const reason = counted.length > 1 ? `자동 — PR ${counted.length}개 모두 머지됨(마지막 #${last.number} → ${last.base}, ${merged})` : `자동 — PR #${last.number} 이 ${last.base} 에 머지됨(${merged})`
+    const reason = `${counted.length > 1 ? `자동 — PR ${counted.length}개 모두 머지됨(마지막 #${last.number} → ${last.base}, ${merged})` : `자동 — PR #${last.number} 이 ${last.base} 에 머지됨(${merged})`}${leftoverNote(plan)}`
     const error = setPlanStatus(plan.id, 'done', reason, mergedMark(counted))
     if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); return }
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
     plan.status = 'done'
     plan.column = 'done'
-    noteLeftover(plan)
     enqueueLearn(plan.id, mergedMark(counted), counted)
     await cleanupPlanWorktrees(plan, counted.map((info) => info.head).filter(Boolean))
   }))
@@ -438,13 +425,12 @@ const autoDonePlans = async (plans, panesAvailable) => {
     const direct = directMergeStatus(planText)
     if (direct.state !== 'done' || hasOpenSteps(plan.progress)) continue
     if (autoDoneDone(planText, direct.mark) && !autoReopenedFor(planText, direct.mark)) continue
-    const reason = `자동 — ${direct.why}`
+    const reason = `자동 — ${direct.why}${leftoverNote(plan)}`
     const error = setPlanStatus(plan.id, 'done', reason, direct.mark)
     if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); continue }
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
     plan.status = 'done'
     plan.column = 'done'
-    noteLeftover(plan)
     await cleanupPlanWorktrees(plan, [])
   }
   // 사람이 직접 완료로 옮긴 계획서도 — PR 이 모두 머지됐는데 아직 그 PR 묶음을 배우지 않았으면(Learn review 줄에 지금 표시가 없음) 넣는다.
@@ -464,10 +450,9 @@ const autoDonePlans = async (plans, panesAvailable) => {
 
 // ── 끝난 에이전트 pane 자동 닫기(pane-close.mjs · 2026-11-12 사용자 요청) ──
 // 묶인 계획서가 모두 끝나고(planFinished) 쉬는 상태가 CLOSE_AFTER_MS 이어지면 scripts/screen pane close 로 닫는다(pane 안 프로그램을 끄지 않는다).
-// 닫히면 다음 수집에 자동 완료 → 보관 · 워크트리 정리가 이어진다. 닫은 뒤 계획서 Lead pane 에 한 줄(flushLeftover 와 같이 수집 뒤에 보낸다)
+// 닫히면 다음 수집에 자동 완료 → 보관 · 워크트리 정리가 이어진다. 닫은 것은 묶인 계획서 Checkpoint 의 `- Pane closed:` 줄에만 적는다 — 아테나 pane 에는 넣지 않는다(할 일 없는 알림 · 2026-11-26)
 const closeAfterEnv = Number(process.env.ATHENA_BOARD_PANE_CLOSE_MS)
 const closeTimer = createCloseTimer(process.env.ATHENA_BOARD_PANE_CLOSE_MS && closeAfterEnv >= 0 ? closeAfterEnv : CLOSE_AFTER_MS)
-const closeNotes = []
 // 자동 완료 앞의 조건과 같다(autoDonePlans) — PR 이 모두 머지(머지 없이 닫힌 것은 빼고 하나 이상) · 바로 머지 끝 · 남은 단계 칸 없음 · 사람이 되돌린 것 아님. Status done 이면 끝
 const planFinished = async (plan) => {
   if (plan.archived || hasOpenSteps(plan.progress)) return false
@@ -548,7 +533,12 @@ const closeFinishedPanes = async (plans, rawPanes) => {
     for (const plan of plans) plan.agents = plan.agents.filter((id) => id !== paneId)
     const ids = bound.map((plan) => plan.id).join(' · ')
     console.log(`🚪 끝난 pane 닫음 ${paneId} — ${ids}`)
-    closeNotes.push({ pane: bound.find((plan) => plan.leadPane)?.leadPane ?? '', text: `[현황판 → 아테나] 🚪 ${paneId} 닫음 — 맡은 일이 끝남(${ids})` })
+    const closedLine = `- Pane closed: ${paneId} — 맡은 일이 끝남(${stamp()})`
+    for (const plan of bound) {
+      try {
+        updatePlan(join(ROOT, plan.id), (text) => (/^- Work ref:.*$/m.test(text) ? text.replace(/^(- Work ref:.*)$/m, `$1\n${closedLine}`) : text.replace(/^(- Status:.*)$/m, `$1\n${closedLine}`)))
+      } catch (error) { console.log(`⚠️ pane 닫음 기록 실패 ${plan.id}: ${error.message}`) }
+    }
   }
 }
 
@@ -846,13 +836,26 @@ const doneCheck = async (issue) => {
 }
 
 // ── 지금 동작 중 ─────────────────────────────────────────────────────────
+// 조용한 끝 알림 — 아테나 pane 에 넣지 않은 끝 줄(agent-done-notify.py 가 차례 상태 파일에 done_notice 로 남긴다).
+// pane 에 done { id, plan, summary, at } 로 실어 카드 알약 · 앱 트레이의 맥 알림이 읽는다. 다음 입력을 받으면 훅이 지운다
+const withDoneNotice = (pane) => {
+  if (!pane.agent || !BOOT_PATHS.state) return pane
+  try {
+    const turn = JSON.parse(readFileSync(join(BOOT_PATHS.state, 'agent-turn', `${pane.id}.json`), 'utf8'))
+    const notice = turn.state === 'done' ? turn.done_notice : null
+    if (!notice?.id) return pane
+    return { ...pane, done: { id: String(notice.id), plan: String(notice.plan || ''), summary: String(notice.summary || ''), at: Number(notice.at) || 0 } }
+  } catch {
+    return pane
+  }
+}
 const readPanes = async () => {
   // 화면 계층(scripts/screen)의 에이전트 pane 만 — 없거나 실패면 "찾지 못했어요"
   const listed = await screen(['pane', 'list', '--agent-only'])
   if (!listed) return { available: false, panes: [], raw: [] }
   try {
     // 현황판 pane 모양(plan-bind.mjs boardPaneOf — 스튜디오 앱도 같은 함수로)
-    const panes = listed.panes.map((pane) => boardPaneOf(pane, ROOT, homedir()))
+    const panes = listed.panes.map((pane) => withDoneNotice(boardPaneOf(pane, ROOT, homedir())))
     // raw — 데몬 pane 그대로(끝난 pane 닫기가 foreground_status · cwd 를 본다)
     return { available: true, panes, raw: listed.panes }
   } catch {
@@ -1226,7 +1229,6 @@ const refreshOnce = async () => {
     const payload = `data: ${JSON.stringify({ ...snapshot, updatedAt, boot: BOOT })}\n\n`
     for (const client of clients) client.write(payload)
   }
-  await flushLeftover()
 }
 // 갱신은 한 번에 하나 — 수집이 3초보다 오래 걸려도 겹치지 않게(먼저 시작한 낡은 수집이 나중 것을 덮거나 자동 완료·학습 대기열을 두 번 돌리지 않게).
 // 도는 중에 요청이 오면(카드 이동 등) 끝난 뒤 한 번 더 돈다. 3초 주기는 도는 중이면 건너뛴다. 오류는 남기고 서버는 계속 돈다

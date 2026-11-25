@@ -266,13 +266,36 @@ def lead_log_file() -> pathlib.Path:
     return ATHENA_DIR / '.lead-log.md'
 
 
-def lead_log_note() -> str:
-    """압축 뒤 아테나가 먼저 읽을 리드 기록 최근 줄(없으면 적는 법 한 줄)"""
+LEAD_LOG_OWNER = re.compile(r'^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} <([\w-]+)(?:·([0-9a-fA-F-]+))?> ')
+
+
+def own_log_lines(lines: list, pane: str, session: str) -> list:
+    """리드 기록에서 이 아테나 창의 줄만 — scripts/lead-log.mjs ownLines 와 같은 규칙: 표시 없는 옛 줄 · 내 pane · 내 대화 · 지금 닫힌 pane 의 줄
+    (창을 닫았다 열면 pane 번호가 바뀐다 — 닫힌 창의 기록은 떠 있는 아테나가 이어 읽는다). 다른 열린 창의 줄만 뺀다.
+    내 pane 을 모르거나 열린 pane 을 못 읽으면 거르지 않는다(놓치지 않는 쪽)"""
+    if not pane or not any((found := LEAD_LOG_OWNER.match(line)) and found.group(1) != pane for line in lines):
+        return lines   # 다른 창의 줄이 없으면 화면에 묻지 않는다
+    try:
+        opened = {str(item.get('id')) for item in screen.list_panes(timeout=5)}
+    except Exception:
+        return lines
+    kept = []
+    for line in lines:
+        found = LEAD_LOG_OWNER.match(line)
+        mine = not found or found.group(1) == pane or bool(found.group(2) and session.startswith(found.group(2)))
+        if mine or found.group(1) not in opened:
+            kept.append(line)
+    return kept
+
+
+def lead_log_note(session: str = '') -> str:
+    """압축 뒤 아테나가 먼저 읽을 리드 기록 최근 줄 — 이 창의 줄만(own_log_lines · 없으면 적는 법 한 줄)"""
     file = lead_log_file()
     try:
         lines = [line for line in file.read_text(encoding='utf-8').splitlines() if line.startswith('- ')]
     except OSError:
         lines = []
+    lines = own_log_lines(lines, lead_pane(), session)
     add = f'node {shlex.quote(str(ATHENA_DIR / "scripts/lead-log.mjs"))} <정정|실패|사실|결정> "<한 줄>"'
     if not lines:
         return f'📝 리드 기록({file})은 아직 비었다 — 사용자 정정 · 실패 원인 · 확인한 사실 · 결정이 생기면 그때 {add} 로 한 줄씩 적는다.'
@@ -554,7 +577,7 @@ def on_post(payload: dict, reread: list, codex: bool = False) -> None:
     if original:
         message = f'{message} {original}'
     if is_lead():
-        message = f'{lead_log_note()}\n\n{message}'
+        message = f'{lead_log_note(str(payload.get("session_id") or ""))}\n\n{message}'
     recall = recall_notes(payload, codex, self_pane)
     if recall:
         message = f'{message}\n\n{recall}'
