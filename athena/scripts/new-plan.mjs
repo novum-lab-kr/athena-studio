@@ -61,13 +61,14 @@ const template = readFileSync(join(ROOT, 'docs/plan-template-light.md'), 'utf8')
 const body = template
   .slice(template.indexOf('<!-- BEGIN:template -->') + '<!-- BEGIN:template -->'.length, template.indexOf('<!-- END:template -->'))
   .trim()
-  .replaceAll('{{title}}', summary)
-  .replaceAll('{{updated}}', `${stamp.slice(0, 16)} / ${agent ? `아테나 → ${agent}` : '아테나'}`)
-  .replaceAll('{{status}}', status)
-  .replaceAll('{{owner}}', owner || '(모름)')
-  .replaceAll('{{agent}}', agent || '(정해지지 않음)')
-  .replaceAll('{{issue}}', issue || '없음')
-  .replaceAll('{{prompt}}', prompt ? prompt.split('\n').map((line) => `> ${line}`).join('\n') : '> (지시문 없음 — pane 에서 대화로 지시)')
+  // 값은 함수로 넘긴다 — 글자로 넘기면 지시문 · 제목의 $` · $' · $& · $$ 를 바꾸기 패턴으로 풀어 템플릿 앞뒤가 통째로 끼어 든다
+  .replaceAll('{{title}}', () => summary)
+  .replaceAll('{{updated}}', () => `${stamp.slice(0, 16)} / ${agent ? `아테나 → ${agent}` : '아테나'}`)
+  .replaceAll('{{status}}', () => status)
+  .replaceAll('{{owner}}', () => owner || '(모름)')
+  .replaceAll('{{agent}}', () => agent || '(정해지지 않음)')
+  .replaceAll('{{issue}}', () => issue || '없음')
+  .replaceAll('{{prompt}}', () => (prompt ? prompt.split('\n').map((line) => `> ${line}`).join('\n') : '> (지시문 없음 — pane 에서 대화로 지시)'))
 
 // 없을 때만 만든다(wx) — 같은 이름으로 동시에 만들어도 서로 덮지 않고 다음 번호로 간다
 let file = ''
