@@ -742,15 +742,16 @@ node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" e
 
 # 레포 규칙 문서 안내는 pane 줄보다 앞에 — 현황판이 출력의 마지막 줄을 pane 줄로 읽는다
 if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
-echo "$SHIP_LINE"
-echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # 시작 확인 — 새 pane 은 첫 지시로 차례가 생길 때까지, 이어 보내기는 위에서 이미 기다렸다(scripts/lib/screen.py wait_start).
 # 아테나가 보낸 뒤 sleep · pane read 로 따로 확인하지 않게 한 줄로 알린다. 확인하지 못해도 띄우기는 그대로
 # 아테나 pane 이 불렀을 때만(현황판 · pr-auto · 에이전트 pane 의 reviewer 띄우기는 기다리지 않는다). 새 claude 는 뜨는 데 시간이 걸려 30초까지
+# pane 줄보다 앞에 찍는다 — 현황판(board/server.mjs [작업 시작])이 출력의 마지막 줄을 pane 줄로 읽는다
 if [ -z "${START_STATE:-}" ] && [ -n "$LEAD_PANE" ]; then
   START_STATE="$("$SCREEN" pane wait-start "$PANE" --timeout "$(( ${ATHENA_WAIT_START_SECONDS:-30} * 1000 ))" 2>/dev/null)" || START_STATE=""
 fi
 [ -z "${START_STATE:-}" ] || echo "   시작 확인: $START_STATE"
+echo "$SHIP_LINE"
+echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
 if [ "$ROLE" = reviewer ] && [ "$AGENT" != security-reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
 
