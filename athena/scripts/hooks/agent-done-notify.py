@@ -567,8 +567,9 @@ def main() -> None:
             state['pending'] = {'id': notice_id, 'turn': turn, 'line': line, 'message': message, 'plan': plan}
         save_state(state_path, state)
     if quiet:
-        # 아테나 pane 에 넣지 않는다 — 현황판 · 트레이가 읽을 기록만(차례 상태 파일 · 다음 입력에서 지운다)
-        agent_turn.write_turn(pane, state='done', done_notice={'id': notice_id, 'turn': turn, 'plan': plan, 'line': line, 'summary': ' / '.join(summary), 'at': time.time()})
+        # 아테나 pane 에 넣지 않는다 — 현황판 · 트레이가 읽을 기록만(차례 상태 파일 · 다음 입력에서 지운다).
+        # 담당(lead)도 같이 — 다음 입력 전에 계획서가 archive/ 로 옮겨져도 take_done_notices 가 이 값으로 담당을 찾는다(PR #376 자동 리뷰)
+        agent_turn.write_turn(pane, state='done', done_notice={'id': notice_id, 'turn': turn, 'plan': plan, 'lead': lead, 'line': line, 'summary': ' / '.join(summary), 'at': time.time()})
         log_event('agent.done.quiet', plan=plan, agent=agent, pane=pane)
         return
     if stop:

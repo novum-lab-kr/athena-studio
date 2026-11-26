@@ -1149,7 +1149,8 @@ const wideCheck = (planArg, repoArg, dir) => {
   const fork = git(worktree, ['merge-base', `origin/${base}`, 'HEAD'])
   if (!fork) return unknown(`origin/${base} 와 갈라진 곳을 찾지 못했다`)
   const tracked = numstatFiles(git(worktree, ['diff', '--numstat', fork]))
-  const fresh = String(git(worktree, ['ls-files', '--others', '--exclude-standard']) ?? '').split('\n').filter(Boolean).map((path) => {
+  // 미추적 파일은 -z 로 — 기본 core.quotePath 면 한글 경로가 따옴표 · 이스케이프로 와서 읽지 못하고 0줄로 셌다(PR #376 자동 리뷰)
+  const fresh = String(git(worktree, ['ls-files', '-z', '--others', '--exclude-standard']) ?? '').split('\0').filter(Boolean).map((path) => {
     let added = 0
     try { added = readFileSync(join(worktree, path), 'utf8').split('\n').length } catch { /* 못 읽는 파일은 0줄 */ }
     return { path, added, deleted: 0 }

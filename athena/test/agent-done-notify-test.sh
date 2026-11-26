@@ -480,5 +480,11 @@ check "담당이 닫혔으면 떠 있는 아테나의 입력에 붙는다(원래
 printf '{"done_missed":[{"id":"board-x","plan":"plans/task/gone.md","lead":"p1","line":"[현황판 → 아테나] 자동 완료 · 계획서 plans/task/gone.md","summary":"남은 빈 칸 2개"}]}\n' > "$DATA/state/agent-turn/board-x.json"
 check "보관된 계획서의 남은 빈 칸 줄 — 다른 아테나에는 안 붙고 적힌 담당에게 붙는다" "$(lead_prompt p2 | grep -c 'gone.md') $(lead_prompt p1 | grep -c '자동 완료 · 계획서 plans/task/gone.md — 요약: 남은 빈 칸 2개$')" "0 1"
 check "대신 집은 것도 두 번 붙이지 않는다" "$(PANES_JSON="$(panes "$P2")" lead_prompt p2 | grep -c '끝 · p9')" 0
+# 다음 입력 전에 계획서가 archive/ 로 옮겨져도 — done_notice 에 적어 둔 담당(lead)의 입력에 붙는다(PR #376 자동 리뷰)
+hook prompt '{"prompt":"보관 1"}'; hook stop '{"last_assistant_message":"보관 전에 끝냈어요."}'
+check "조용한 끝 알림에 담당 아테나도 적는다" "$(done_notice lead)" p1
+mv "$BODY/$PLAN" "$BODY/$PLAN.moved"
+check "계획서가 옮겨져도 적힌 담당(p1)에게 붙고 다른 아테나에는 안 붙는다" "$(lead_prompt p2 | grep -c '보관 전에') $(lead_prompt p1 | grep -c '요약: 보관 전에 끝냈어요.$')" "0 1"
+mv "$BODY/$PLAN.moved" "$BODY/$PLAN"
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

@@ -385,6 +385,11 @@ for n in 1 2 3 4; do printf 'export const n%s = %s\n' "$n" "$n" > "$DWT/new$n.mj
 wide_of feat/sec
 expect "미커밋 변경 + 새 파일까지 센다 → 예" '[ "$WIDE_OUT" = "넓은 수정: 예(코드 파일 5개 ≥ 5)" ]' "$WIDE_OUT"
 rm -f "$DWT"/new[1-4].mjs; DG checkout -q -- run.mjs
+# 한글 이름 새 파일 — 기본 core.quotePath 면 ls-files 가 따옴표 · 이스케이프 경로를 줘 0줄로 셌다(PR #376 자동 리뷰) → -z 로 원래 경로
+DG checkout -q feat/x; for n in $(seq 150); do printf 'export const k%s = %s\n' "$n" "$n"; done > "$DWT/새기능.mjs"
+wide_of feat/x
+expect "한글 이름 새 파일 150줄도 센다 → 예" 'printf "%s" "$WIDE_OUT" | grep -Eq "^넓은 수정: 예\(코드 [0-9]+줄 ≥ 150\)$"' "$WIDE_OUT"
+rm -f "$DWT/새기능.mjs"
 wide_of feat/wide '- Wide change: no (문구만 바꿈)
 '
 expect "코드 파일 5개 이상 + Wide change: no (이유) → 아니오" '[ "$WIDE_OUT" = "넓은 수정: 아니오(에이전트 표시(no — 문구만 바꿈))" ]' "$WIDE_OUT"
