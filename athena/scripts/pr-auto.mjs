@@ -57,7 +57,7 @@ import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
   BASE_MERGED, FAST_LAST, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, skipsMergeConfirm,
+  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, singleRepoSkipReason, withAutoSkipLine, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
   DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planRiskFlags, planWideMark, planWideOff, wideChangeVerdict,
@@ -508,7 +508,15 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const org = githubOrg(config)
   if (!autoMergeRepos(config).has(repo)) return console.log(`⏭  ${repo} 는 자동 머지를 켜지 않았다(pack.json 레포 "autoMerge": true)`)
   const planText = readFileSync(planPath, 'utf8')
-  if (!singleRepoPlan(planText, config, repo)) return console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(결정 D4 · 여러 레포 PR 은 사람이)`)
+  // 레포 하나짜리가 아니면(결정 D4 · 여러 레포 PR 은 사람이) 로그만 찍고 버리지 않는다 — 계획서 줄 · 사건으로 이유를 남긴다(2026-11-21 PR #357)
+  const skipReason = singleRepoSkipReason(planText, config, repo)
+  if (skipReason) {
+    if (!dryRun) {
+      updatePlan(planPath, (current) => withAutoSkipLine(current, { repo, number, sha: head, reason: skipReason, stamp: stamp() }))
+      logEvent(ROOT, 'auto.skip', { plan: planFile, repo, pr: number, ...(head ? { sha: head.slice(0, 7) } : {}), reason: 'not-single-repo', why: skipReason })
+    }
+    return console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(결정 D4 · 여러 레포 PR 은 사람이) — ${skipReason}`)
+  }
   const viewPr = () => ghJson(['pr', 'view', number, '--repo', `${org}/${repo}`, '--json', 'state,isDraft,headRefOid,headRefName,baseRefName,mergeable,title,body'])
   let pr = viewPr()
   // ship.sh 가 push 직후 바로 넣은 일이면 GitHub 가 PR HEAD 를 아직 옛 커밋으로 답할 수 있다 — 몇 번 다시 묻는다(그래도 다르면 아래에서 건너뛴다)

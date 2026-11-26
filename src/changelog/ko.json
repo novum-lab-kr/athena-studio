@@ -290,5 +290,6 @@
   "Fix more server read commands needing confirmation — loginctl show · list, git remote -v": "서버 읽기 명령 확인 요청 더 줄임 — loginctl show · list · git remote -v",
   "Fix PR auto review stopping after 2 reviews — up to 3 reviews for every PR": "PR 자동 리뷰가 2번에서 멈추던 것 수정 — 모든 PR 최대 3번",
   "Fix the pack bar hiding during a core update — shows the last pack list": "코어 업데이트 중 팩 줄이 숨던 것 수정 — 마지막 팩 목록 표시",
-  "Fix lightweight plans breaking when the title or instructions contain $ — written as typed": "제목 · 지시문에 $ 가 들어가면 경량 계획서가 깨지던 것 수정 — 쓴 글자 그대로"
+  "Fix lightweight plans breaking when the title or instructions contain $ — written as typed": "제목 · 지시문에 $ 가 들어가면 경량 계획서가 깨지던 것 수정 — 쓴 글자 그대로",
+  "Fix PR auto review silently skipping plans with no agent — reason left in plan": "에이전트 없는 계획서의 PR 을 자동 리뷰가 말없이 건너뛰던 것 수정 — 계획서에 이유 남김"
 }

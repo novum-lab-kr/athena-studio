@@ -326,6 +326,23 @@ expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 �
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
 } > "$GRP"; grp_end "done 계획서에 이어 올림 — 새 PR · 열린 PR push · blocked 는 그대로"
 
+# 에이전트 0개 계획서(Agent 줄 · 작업 배분 표 없음 — 2026-11-21 PR #357) — ship.sh 는 PR 은 올리되 자동 리뷰 대기열에 넣지 않고,
+# 처리기에 들어와도 조용히 버리지 않는다 — 둘 다 같은 판정(singleRepoPlan)으로 계획서에 "- Auto skip:" 한 줄 · 처리기는 auto.skip 사건도
+ZPLAN="plans/task/20261026-zero-agent.md"
+echo z1 >> "$WTY/y.txt" && G -C "$WTY" add y.txt && G -C "$WTY" commit -q -m z1
+ZS="$(git -C "$WTY" rev-parse HEAD)"
+printf '# 시험 에이전트 0개\n\n## Checkpoint\n- Status: in_progress\n- Work ref: %s · 🌿 feat/y\n- PR: https://github.com/acme/web/pull/8 (feat/y → dev, draft · 2026-10-26 11:00)\n\n## Commits\n- `%s` feat/y · 0개 · push 안 함\n' "$WTY" "${ZS:0:7}" > "$CORE/$ZPLAN"
+: > "$FLOG"; rm -f "$FQUEUE"/*.json
+OUT="$(cd "$CORE" && env PATH="$FBIN:$PATH" FAKE_LOG="$FLOG" ATHENA_PR_AUTO_QUEUE="$FQUEUE" ATHENA_DATA_DIR="$TMP/data" FAKE_OPEN_URL=https://github.com/acme/web/pull/8 bash scripts/ship.sh --plan "$ZPLAN" --dir "$WTY" --base dev --title 'feat(web): 0개' --body-file "$TMP/body.md" --no-review-ok --yes 2>&1)"; CODE=$?
+{
+expect "에이전트 0개 — ship.sh 는 push 하되 대기열에 안 넣고 계획서에 건너뛴 이유 한 줄" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/y)" = "$ZS" ] && ! ls "$FQUEUE"/*.json >/dev/null 2>&1 && grep -q "^- Auto skip: web#8 @${ZS:0:7} · 자동 리뷰 안 함 — .*붙은 에이전트 없음" "$CORE/$ZPLAN" && echo "$OUT" | grep -q "자동 리뷰 안 함"' "$OUT
+$(grep '^- Auto' "$CORE/$ZPLAN"; ls "$FQUEUE")"
+sed -i.bak '/^- Auto skip:/d' "$CORE/$ZPLAN" && rm -f "$CORE/$ZPLAN.bak"
+OUT="$(cd "$CORE" && env PATH="$FBIN:$PATH" FAKE_LOG="$FLOG" ATHENA_PR_AUTO_QUEUE="$FQUEUE" ATHENA_DATA_DIR="$TMP/data" node scripts/pr-auto.mjs --plan "$ZPLAN" --pr web#8 2>&1)"; CODE=$?
+expect "에이전트 0개 — 처리기도 건너뛴 이유를 계획서 줄 · auto.skip 사건으로 남긴다(gh 를 부르지 않음)" '[ $CODE = 0 ] && grep -q "^- Auto skip: web#8 · 자동 리뷰 안 함 — .*붙은 에이전트 없음" "$CORE/$ZPLAN" && grep -rqs "\"auto.skip\".*20261026-zero-agent" "$CORE/.events.jsonl" "$TMP/data" && ! grep -q "gh pr view" "$FLOG"' "$OUT
+$(grep '^- Auto' "$CORE/$ZPLAN"; cat "$CORE/.events.jsonl" 2>/dev/null | tail -2)"
+} > "$GRP"; grp_end "에이전트 0개 계획서 — ship.sh 는 대기열에 안 넣음 · 처리기도 계획서 줄 · 사건으로 이유를 남김"
+
 # PR 끔 레포의 일반 PR 차단 — push 전에 막고(오류에 현재 방식 · --direct-merge 명령, 별도 옵션 이름은 없음), 설정은 실행마다 다시 읽는다
 echo; echo "PR 끔 레포의 일반 PR 차단 (--user-pr)"
 echo g1 > "$WTY/g.txt" && G -C "$WTY" add g.txt && G -C "$WTY" commit -q -m g1

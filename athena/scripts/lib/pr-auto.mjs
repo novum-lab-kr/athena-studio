@@ -594,11 +594,30 @@ export const planAgents = (planText, config) => {
 }
 // 결정 D4 — 레포 하나짜리 작업인가. ship.sh 와 같은 기준 — 붙은 에이전트가 정확히 하나이고 그게 이 레포 것
 // (ship.sh 는 에이전트가 둘 이상이면 같은 레포의 앱 에이전트끼리여도 아테나에게 넘긴다 — 자동 흐름도 그 PR 은 사람이)
-export const singleRepoPlan = (planText, config, repoName) => {
+export const singleRepoPlan = (planText, config, repoName) => !singleRepoSkipReason(planText, config, repoName)
+// 레포 하나짜리가 아닌 이유 — 빈 글이면 대상. ship.sh 의 대기열 넣기와 처리기가 같이 쓴다(2026-11-21 PR #357 — 에이전트 0개 계획서를
+// ship.sh 는 대기열에 넣고 처리기는 기록 없이 버렸다). 그 이유는 계획서 "- Auto skip:" 줄에 남긴다
+export const singleRepoSkipReason = (planText, config, repoName) => {
   const repo = (config?.repos ?? []).find((entry) => entry.name === repoName)
-  if (!repo) return false
-  const found = [...planAgents(planText, config)]
-  return found.length === 1 && repoAgents(repo).includes(found[0])
+  if (!repo) return `팩에 ${repoName} 레포가 없다`
+  const found = [...planAgents(planText, config)].sort()
+  if (found.length === 0) return '붙은 에이전트 없음(Agent 줄 · 작업 배분 표에 팩 에이전트가 없다)'
+  if (found.length > 1) return `붙은 에이전트 ${found.length}개(${found.join(', ')})`
+  return repoAgents(repo).includes(found[0]) ? '' : `붙은 에이전트 ${found[0]} 가 ${repoName} 레포 것이 아니다`
+}
+// 자동 리뷰를 건너뛴 PR 의 계획서 줄 — "- Auto review:" 과 머리가 달라 라운드 · needsReview · 현황판 판정에 끼지 않는다. 같은 PR 줄은 그 자리에서 바꾼다
+export const AUTO_SKIP = '자동 리뷰 안 함'
+const AUTO_SKIP_LINE = /^- Auto skip:\s*([\w.-]+)#(\d+)\b/
+export const autoSkipLineText = ({ repo, number, sha = '', reason, stamp }) =>
+  `- Auto skip: ${repo}#${number}${sha ? ` @${String(sha).slice(0, 7)}` : ''} · ${AUTO_SKIP} — 레포 하나짜리 작업이 아니다(${reason}) · 리뷰 · 머지는 사람이 · ${stamp}`
+export const withAutoSkipLine = (planText, entry) => {
+  const line = autoSkipLineText(entry)
+  const lines = String(planText).split('\n')
+  const index = lines.findIndex((row) => { const hit = row.match(AUTO_SKIP_LINE); return hit && hit[1] === entry.repo && hit[2] === String(entry.number) })
+  if (index >= 0) { lines[index] = line; return lines.join('\n') }
+  const anchor = lines.findIndex((row) => /^- Work ref:/.test(row))
+  if (anchor >= 0) { lines.splice(anchor + 1, 0, line); return lines.join('\n') }
+  return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
 }
 // 여러 에이전트 계획서에서 아테나가 고른 에이전트(ship.sh --repo-agent)의 레포 몫인가 — 그 에이전트가 계획서에 붙어 있고 이 레포 것.
 // 바로 머지 · Actions 넘기기(--direct-merge · --handoff)만 쓴다. 여러 레포 PR 자동 리뷰(singleRepoPlan)는 그대로 사람이
