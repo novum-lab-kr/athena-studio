@@ -12,7 +12,8 @@ import { projectFolderName } from '../board/claude-paths.mjs'
 // 겹치면 앞쪽이 가져간다 — 응답을 쓰는 동안 도는 도구는 생각·작성으로 든다
 export const WORK_KINDS = ['think', 'wait', 'check', 'other', 'read']
 
-const MARK = /^\s*(?:(\[[^\]]*\]\s*새 요청 — 새 계획서|이 작업의 계획서)|리뷰할 계획서):\s*\S*?(plans\/\S+?\.md)/
+// 작업자 세션 머리 — scripts/token-usage.mjs 도 역할을 가를 때 쓴다
+export const MARK = /^\s*(?:(\[[^\]]*\]\s*새 요청 — 새 계획서|이 작업의 계획서)|리뷰할 계획서):\s*\S*?(plans\/\S+?\.md)/
 const WAITING = /\b(?:until|while)\b[\s\S]*\bsleep\b|^\s*sleep\b|review-wait\.sh/
 const CHECKING = /scripts\/verify\/|\breuse\.sh\b|\bcommit\.sh\b|\bship\.sh\b|\b(?:npm|pnpm|yarn)\s+(?:run\s+)?(?:test|check|typecheck|lint|build)\b|\btsc\b|\bvitest\b|\bjest\b|\bplaywright\s+test\b|\bgit\s+commit\b|\btest\/\S+-test\.sh\b/
 

@@ -459,6 +459,7 @@
   "issue.actionsWaiting": "Actions queued",
   "issue.doneReady": "Ready to close",
   "issue.inputWait": " · waiting for input",
+  "issue.paneDone": "🤖 {agent} done",
   "issue.noOwner": "No assignee",
   "issue.noPane": "{agent} · no pane",
   "issue.titleHint": "Click to see requests · progress · result",

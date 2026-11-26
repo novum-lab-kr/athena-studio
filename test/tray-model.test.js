@@ -237,3 +237,21 @@ test('알림: 같은 pane 의 허락 한 건은 화면 감지 · 코어 perm · 
   // 허락이 아닌 질문은 그대로 알린다
   assert.equal(waitingFirst.updateRequests([permission('perm-p1'), { id: 'q', kind: 'question', state: 'open', title: '질문', pane: 'p1', permission: false }]).length, 1)
 })
+
+test('알림: 조용한 끝 알림 — 현황판 pane 의 done 을 새 id 만 한 번 · 켤 때 본 것은 기준만', () => {
+  const notifier = new tray.Notifier()
+  const done = (id, noticeId, summary = '요약') => ({ id, agent: 'web-fe', done: { id: noticeId, plan: 'plans/task/x.md', summary, at: 1 } })
+  // 현황판을 못 읽은 때는 기준도 잡지 않는다
+  assert.deepEqual(notifier.updateDone(undefined), [])
+  // 켤 때 이미 끝나 있던 것은 알리지 않는다
+  assert.deepEqual(notifier.updateDone([done('p1', 'a')]), [])
+  assert.deepEqual(notifier.updateDone([done('p1', 'a')]), [])
+  // 새 끝 알림만 한 번 — 요약이 본문에
+  const found = notifier.updateDone([done('p1', 'a'), done('p2', 'b', '버튼 문구 고침 / PR #7'), { id: 'p3', agent: 'api-be' }])
+  assert.deepEqual(found, [{ kind: 'done', title: 'done', body: 'web-fe — 버튼 문구 고침 / PR #7', target: { pane: 'p2' } }])
+  assert.deepEqual(notifier.updateDone([done('p1', 'a'), done('p2', 'b')]), [])
+  // 같은 pane 이 다음 차례를 끝내면(새 id) 다시 알린다
+  assert.equal(notifier.updateDone([done('p2', 'c')]).length, 1)
+  // 여러 건은 묶는다
+  assert.equal(tray.bundle(notifier.updateDone([done('p1', 'd'), done('p2', 'e')]))[0].body, 'web-fe, web-fe')
+})

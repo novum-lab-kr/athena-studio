@@ -27,7 +27,7 @@
   기록만 믿지 않고 출력 파일을 쥔 프로세스(lsof)가 있는 것만 "도는 중" 으로 센다. 확인하지 못하면 0개로 본다(개수 없이 알린다).
 아테나 pane 이 선택 창(waiting)을 띄웠으면 뒤에서 닫힐 때까지 기다린다. 새 사용자 입력이 오면 옛 턴의 대기 알림은 버린다.
 넣기는 scripts/lead-send.py 와 같은 길(pane run · 대기열 · 담당 대화 확인) — Claude · Codex 아테나 창 모두.
-아테나 pane 이 없거나 닫혔으면 조용히 넘어간다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
+아테나 pane 이 닫혔으면 lead-send.py 가 떠 있는 아테나에게 넘기거나(계획서 Lead pane 을 바꾼다) 모아 둔다 — 계획서에 Lead pane 이 없으면 조용히 넘어간다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
 
 사용: agent-done-notify.py prompt|stop   (훅 입력은 표준 입력 JSON)
 """
@@ -204,6 +204,94 @@ def with_summary(line: str, reply: str) -> str:
     return f'{line} — 요약: {" / ".join(picked)}' if picked else line
 
 
+# 조용한 끝 알림(2026-11-26 · 토큰 절감 C1 · C2) — 아테나 pane 에 넣지 않는 끝 줄.
+#   C1 레포 하나짜리 계획서의 작업 에이전트가 정해진 형식(끝 · … — 요약: …)으로 끝냈으면 차례 상태 파일에 done_notice 만 남긴다 —
+#      현황판이 pane 알약에 싣고(/api/state panes[].done) 앱 트레이가 맥 알림 한 줄로 띄운다. 아테나는 물으면 계획서 Checkpoint 로 답한다.
+#      지금처럼 아테나로 가는 것: ⏸ 멈춤 · 질문으로 멈춤 · 요약을 못 뽑은 끝 줄 · Status blocked · 여러 에이전트 계획서(다음 단계를 아테나가 넘긴다)
+#      · reviewer(아테나가 띄운 리뷰의 결론은 아테나가 받아 넘긴다) · 에이전트 목록을 못 읽은 경우
+#   C2 에이전트 pane 이 띄운 reviewer(delegate.sh 가 ATHENA_REVIEW_FROM_AGENT=1)의 끝 줄은 어디에도 넣지 않는다 —
+#      결론은 계획서 "- Review result:" 줄 · 띄운 작업자가 review-wait.sh 로 기다린다. 멈춤 · 질문은 지금처럼 아테나로
+REVIEWERS = ('reviewer', 'security-reviewer')
+
+
+def plan_agents(plan_text: str) -> set:
+    """계획서에 묶인 팩 에이전트 이름 — "- Agent:" 줄과 정식 계획서 "작업 배분" 표의 첫 칸(ship.sh 의 레포 하나짜리 판정과 같은 기준)"""
+    from athena_config import load
+    names = set()
+    for entry in load(str(ATHENA_DIR))['repos']:
+        names.update(entry.get('agents') or [])
+        if entry.get('packagesAgent'):
+            names.add(entry['packagesAgent'])
+        names.update(app['agent'] for app in (entry.get('apps') or {}).values())
+    rows = [found.group(1)] if (found := re.search(r'^- Agent:\s*(.+)$', plan_text, re.M)) else []
+    section = re.search(r'^## \d*\.?\s*작업 배분\s*\n(.*?)(?=^## |\Z)', plan_text, re.M | re.S)
+    if section:
+        rows += re.findall(r'^\|\s*([^|]+?)\s*\|', section.group(1), re.M)
+    return {name for name in names for row in rows if re.search(rf'(?<![\w-]){re.escape(name)}(?![\w-])', row)}
+
+
+# 형식(⏸ 멈춤 · 끝 물음표) 없이 답을 기다리는 말 — 있으면 조용한 끝으로 돌리지 않는다(H1 · 묻힌 물음을 아테나가 놓치지 않게)
+NEEDS_ANSWER = re.compile(r'답이\s*필요|알려\s*주|확인\s*필요|진행할지|정해\s*주')
+
+
+def pane_alive(pane: str) -> bool:
+    try:
+        screen.get_backend().get_pane(pane)
+        return True
+    except Exception:
+        return False
+
+
+def board_up() -> bool:
+    """현황판 서버가 떠 있나 — 맥 알림 · 카드 알약은 앱이 현황판 상태를 읽어 띄운다(꺼져 있으면 조용한 끝이 어디에도 안 보인다 · H7). 포트에 붙어 보기만 한다"""
+    try:
+        import socket
+        from athena_config import board_port
+        with socket.create_connection(('127.0.0.1', board_port(str(ATHENA_DIR))), timeout=0.5):
+            return True
+    except (Exception, SystemExit):
+        return False
+
+
+STAMP = re.compile(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}')
+
+
+def security_high(plan_text: str, pane: str = '') -> bool:
+    """이번 보안 검토의 결과 줄이 높음 1 이상인가 — 이 pane 을 띄운 "- Security review: … · 띄움 <시각>" 줄(없으면 마지막 띄운 줄)과
+    같은 레포 · 브랜치이고 띄운 시각 뒤에 적힌 "- Security result:" 줄만 본다(옛 검토 · 다른 레포 결과로 판정하지 않게).
+    띄운 줄이 없는 옛 계획서는 마지막 결과 줄로"""
+    lines = plan_text.splitlines()
+    launches = [line for line in lines if line.startswith('- Security review:')]
+    results = [line for line in lines if line.startswith('- Security result:')]
+    mine = [line for line in launches if pane and f' pane {pane} ' in line]
+    launch = (mine or launches or [''])[-1]
+    launched = re.search(r'띄움 (\d{4}-\d{2}-\d{2} \d{2}:\d{2})', launch)
+    if launched:
+        where = re.search(r'📦 \S+ · 🌿 \S+ ', launch)
+        def fresh(line: str) -> bool:
+            stamp = STAMP.search(line)
+            return bool(stamp) and stamp.group(0) >= launched.group(1) and (not where or where.group(0) in line)
+        results = [line for line in results if fresh(line)]
+    found = re.search(r'높음\s*(\d+)', results[-1]) if results else None
+    return bool(found) and int(found.group(1)) > 0
+
+
+def quiet_done(agent: str, plan_text: str, fields: dict, stop: str, question: bool, summary: list, reply: str = '') -> bool:
+    """이 끝 줄을 아테나 pane 대신 맥 알림 · 현황판 카드로 돌려도 되나(C1). 판정을 못 하면 False — 지금처럼 아테나로"""
+    if stop or question or not summary or agent in REVIEWERS or fields.get('status') == 'blocked':
+        return False
+    if NEEDS_ANSWER.search(reply or ''):
+        return False   # H1
+    if not pane_alive(str(fields.get('lead') or '')):
+        return False   # H2 담당 아테나가 닫혔다 — lead-send 가 떠 있는 아테나에게 넘긴다(F4)
+    if not board_up():
+        return False   # H7
+    try:
+        return len(plan_agents(plan_text)) == 1
+    except (Exception, SystemExit):   # 설정을 못 읽으면 athena_config.load 가 sys.exit 한다 — 끝 알림까지 끊기지 않게
+        return False
+
+
 STOP_MARK = re.compile(r'^[\s#>*_`-]*⏸\s*멈춤\s*[:：]?\s*(.*)$', re.M)
 TAIL_BYTES = 2 * 1024 * 1024   # 대화 기록은 수백 MB 까지 커서 끝부분만 읽는다
 
@@ -370,9 +458,8 @@ def deliver_notice(state_path: pathlib.Path, pane: str, lead: str, notice_id: st
             if not isinstance(pending, dict) or pending.get('id') != notice_id or pending.get('turn') != state.get('turn') or pending.get('claimed'):
                 return
             try:
+                # 담당 pane 이 닫혔어도(gone) lead-send 로 넘긴다 — 떠 있는 아테나가 이어받거나 모아 둔다(lead-send.py take_over · 계획서 F4)
                 menu = pane_request.pane_menu(lead)
-                if menu == 'gone':
-                    raise RuntimeError('아테나 pane 이 없다')
                 if menu is True:
                     if not wait:
                         subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), 'deliver', pane, lead, notice_id],
@@ -408,7 +495,7 @@ def main() -> None:
             deliver_notice(ATHENA_DIR / '.pack-data' / 'state' / 'agent-notify' / f'{pane}.json', pane, lead, notice_id, wait=True)
         return
     if mode not in ('prompt', 'stop') or not agent:
-        return  # reviewer 도 알린다(결정 D2) — 결론은 계획서 줄 · pane 은 review-wait.sh 가 닫는다
+        return  # 아테나가 띄운 reviewer 도 알린다(결정 D2) — 결론은 계획서 줄 · pane 은 review-wait.sh 가 닫는다. 에이전트 pane 이 띄운 reviewer 는 아래 C2
     pane = str(screen.self_info().get('pane_id') or '')
     if not PANE_ID.match(pane):
         return
@@ -434,7 +521,7 @@ def main() -> None:
         try:
             # first · quiet — 첫 차례이고 끝 알림을 건너뛰는 차례면 현황판(turn-watch.mjs 5)이 그 뒤 입력 없이 5분이면 아테나에 알린다
             agent_turn.write_turn(pane, state='working', agent=agent, plan=plan, turn=turn, background=0, question=False, stop='', requests=[],
-                                  first=first, quiet=quiet)
+                                  first=first, quiet=quiet, done_notice=None, done_missed=agent_turn.keep_missed(pane))
         except Exception:
             pass
         return
@@ -460,6 +547,11 @@ def main() -> None:
         plan_text = (ATHENA_DIR / plan).read_text(encoding='utf-8')
     except OSError:
         return
+    if agent in REVIEWERS and not stop and not question and os.environ.get('ATHENA_REVIEW_FROM_AGENT') == '1':
+        # 에이전트 pane 이 띄운 reviewer 의 끝 줄(C2) — 결론은 계획서 줄 · 띄운 작업자가 review-wait.sh 로 받는다.
+        # 예외: 보안 검토가 높음 1 이상이면 아테나로 보낸다
+        if not (agent == 'security-reviewer' and security_high(plan_text, pane)):
+            return
     fields = plan_fields(plan_text)
     lead = fields['lead']
     if not PANE_ID.match(lead) or lead == pane:
@@ -467,6 +559,8 @@ def main() -> None:
     # 중복 막기는 요약을 뺀 줄로 — 요약(마지막 답)만 달라진 같은 차례의 Stop 으로 아테나를 다시 깨우지 않는다(옛 동작 그대로)
     line = notice_line(agent, pane, plan, fields, stop, background, question)
     message = with_summary(line, reply)
+    summary = summary_lines(reply)
+    quiet = quiet_done(agent, plan_text, fields, stop, question, summary, reply)
     with pane_lock(state_path.parent, pane):
         state = load_json(state_path)
         if not state.get('turn') or state.get('skip'):
@@ -478,8 +572,18 @@ def main() -> None:
         if state.get('last') == line or (pending.get('turn') == turn and pending.get('line') == line):
             return
         notice_id = uuid.uuid4().hex
-        state['pending'] = {'id': notice_id, 'turn': turn, 'line': line, 'message': message, 'plan': plan}
+        if quiet:
+            state['last'] = line
+            state.pop('pending', None)
+        else:
+            state['pending'] = {'id': notice_id, 'turn': turn, 'line': line, 'message': message, 'plan': plan}
         save_state(state_path, state)
+    if quiet:
+        # 아테나 pane 에 넣지 않는다 — 현황판 · 트레이가 읽을 기록만(차례 상태 파일 · 다음 입력에서 지운다).
+        # 담당(lead)도 같이 — 다음 입력 전에 계획서가 archive/ 로 옮겨져도 take_done_notices 가 이 값으로 담당을 찾는다(PR #376 자동 리뷰)
+        agent_turn.write_turn(pane, state='done', done_notice={'id': notice_id, 'turn': turn, 'plan': plan, 'lead': lead, 'line': line, 'summary': ' / '.join(summary), 'at': time.time()})
+        log_event('agent.done.quiet', plan=plan, agent=agent, pane=pane)
+        return
     if stop:
         log_event('plan.stop', plan=plan, agent=agent, pane=pane)
     deliver_notice(state_path, pane, lead, notice_id)

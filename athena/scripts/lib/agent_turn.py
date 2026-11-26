@@ -4,6 +4,9 @@
   state: working(입력을 받아 일하는 중) · done(차례를 끝냄) · asking(고르기 질문을 [작업] 요청으로 올림) · waiting-permission(권한 창)
   그 밖의 칸: pane · agent · plan · turn(입력마다 새 값) · background(도는 백그라운드 명령 수) · question(마지막 답 끝이 질문)
     · stop(⏸ 멈춤 이유) · requests(asking 때 연 요청 id) · first(pane 의 첫 차례) · quiet(끝 알림을 건너뛰는 차례 — 시작 안내 · 끝 알림 답) · at(ISO 시각) · ts(초)
+    · done_notice(조용한 끝 알림 — 아테나 pane 에 넣지 않은 끝 줄 { id, turn, plan, line, summary, at, shown? } · 다음 입력에서 지운다)
+    · done_missed(맡은 아테나에게 보이기 전에 다음 입력으로 지워진 done_notice 목록 — 아테나의 다음 입력에 붙이고 비운다)
+    읽는 곳: 현황판 server.mjs withDoneNotice(카드 알약 · 앱 트레이 맥 알림) · 아테나 pane 입력 훅 pane-session.py(take_done_notices — 맡은 계획서 것만 한 줄씩)
   "끝났다" 는 이 파일의 state 하나로 정한다 — 쓰는 곳: agent-done-notify.py(prompt → working · stop → done/asking) ·
   ask-to-request.py(asking) · permission-to-request.py(waiting-permission). 읽는 곳: 현황판 server.mjs reconcileTurns
 
@@ -38,6 +41,22 @@ def pack_state():
     """<팩 데이터>/state — 옛 구조(팩 데이터 없음)면 None"""
     pack_data = ATHENA_DIR / '.pack-data'
     return pack_data.resolve() / 'state' if pack_data.is_symlink() else None
+
+
+def plan_path(plan: str):
+    """계획서 실제 파일 — 본체 기준 논리 경로(plans/…md) · 절대 경로 모두. 링크를 푼 경로가 이 본체의 계획서 폴더(plans — 팩 데이터 링크) 아래인
+    .md 파일일 때만 돌려준다(에이전트가 넘긴 값으로 폴더 밖 파일을 읽거나 고쳐 쓰지 않게 — 2026-11-26 보안 검토). 아니면 None"""
+    if not plan or not str(plan).endswith('.md'):
+        return None
+    try:
+        root = (ATHENA_DIR / 'plans').resolve()
+        path = (pathlib.Path(plan) if os.path.isabs(plan) else ATHENA_DIR / plan).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return path if path.is_relative_to(root) and path.is_file() else None
+
+
+NOTICE_MAX = 600   # 다음 입력에 붙이는 끝난 작업 한 줄 상한 — 끝 줄(이유 120자) + 요약(summary_lines 480자) 관례
 
 
 def _load(path: pathlib.Path) -> dict:
@@ -77,6 +96,79 @@ def write_turn(pane: str, **fields) -> dict:
         data['ts'] = time.time()
         _save(folder / f'{pane}.json', data)
     return data
+
+
+def keep_missed(pane: str) -> list:
+    """새 입력으로 done_notice 를 지우기 전에 — 아직 맡은 아테나에게 안 보인 조용한 끝 알림을 done_missed 로 옮긴 목록(최근 10개).
+    아테나가 그 사이 한 번도 입력을 받지 않았어도 끝난 작업 줄이 사라지지 않게(take_done_notices 가 같이 읽는다)"""
+    before = read_turn(pane)
+    missed = [item for item in (before.get('done_missed') or []) if isinstance(item, dict)]
+    notice = before.get('done_notice')
+    if isinstance(notice, dict) and notice.get('id') and not notice.get('shown'):
+        missed.append(notice)
+    return missed[-10:]
+
+
+def take_done_notices(lead: str, lead_of, heir=None) -> list:
+    """아테나 pane(lead)이 맡은 계획서의 조용한 끝 알림 중 아직 안 보인 것 — "<끝 줄> — 요약: …" 줄 목록. 돌려준 것은 보였다고 표시한다.
+    출처는 차례 상태 파일 하나(done_notice · done_missed — 새 기록 파일을 만들지 않는다). lead_of(계획서) = 그 계획서의 Lead pane.
+    done_notice 는 지우지 않고 shown 만 적는다(현황판 카드 · 트레이는 다음 입력까지 그대로 읽는다).
+    heir(담당 pane) = 그 담당이 닫혀 이 아테나(lead)가 대신 집어도 되는가(H9 — 담당 아테나가 닫히면 끝난 작업 줄이 영영 안 보인다 ·
+    기준은 lead-send F4 와 같이 떠 있는 이 본체의 아테나). 대신 집은 줄에는 "[원래 담당 <pane> 닫힘]" 을 앞에 붙인다"""
+    owners = {}
+
+    def owner_of(item) -> str:
+        plan = str(item.get('plan') or '')
+        if plan not in owners:
+            owners[plan] = lead_of(plan)
+        # 계획서가 보관돼 못 읽으면 남길 때 적어 둔 담당(현황판의 남은 빈 칸 줄 — server.mjs noteLeftoverForLead)
+        return owners[plan] or str(item.get('lead') or '')
+    heirs = {}
+
+    def mine(item) -> bool:
+        owner = owner_of(item)
+        if owner == lead:
+            return True
+        if not owner or heir is None:
+            return False
+        if owner not in heirs:
+            heirs[owner] = bool(heir(owner))
+        return heirs[owner]
+    base = pack_state()
+    folder = base / 'agent-turn' if base else None
+    if folder is None or not folder.is_dir():
+        return []
+    lines = []
+    for path in sorted(folder.glob('*.json')):
+        data = _load(path)
+        current = data.get('done_notice') if isinstance(data.get('done_notice'), dict) else None
+        waiting = [item for item in (data.get('done_missed') or []) if isinstance(item, dict)]
+        if current and not current.get('shown'):
+            waiting.append(current)
+        if not any(mine(item) for item in waiting):
+            continue
+        with pane_lock(folder, path.stem):
+            data = _load(path)
+            kept, taken = [], []
+            for item in (data.get('done_missed') or []):
+                (taken if isinstance(item, dict) and mine(item) else kept).append(item)
+            current = data.get('done_notice') if isinstance(data.get('done_notice'), dict) else None
+            if current and not current.get('shown') and mine(current):
+                current['shown'] = True
+                taken.append(current)
+            if not taken:
+                continue
+            data['done_missed'] = kept
+            _save(path, data)
+        lines += [notice_line(item) if owner_of(item) == lead else f'[원래 담당 {owner_of(item)} 닫힘] {notice_line(item)}' for item in taken]
+    return lines
+
+
+def notice_line(item: dict) -> str:
+    """끝난 작업 한 줄 — 줄바꿈 · 연속 공백을 한 칸으로 펴고 NOTICE_MAX 자로 자른다(차례 상태 파일의 글이 아테나 입력에 여러 줄로 끼어들지 않게)"""
+    text = ' '.join(f'{item.get("line") or ""} — 요약: {item.get("summary") or ""}'.split())
+    return text if len(text) <= NOTICE_MAX else text[:NOTICE_MAX - 1] + '…'
+
 
 
 QUESTION_END = re.compile(r'[?？]\s*$')

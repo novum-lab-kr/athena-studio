@@ -80,17 +80,17 @@ run_confirms() { (cd "$CORE" && "${ENVS[@]}" FAKE_PANES="$1" node --input-type=m
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 머지
 OUT="$(run_confirms '{"id":"p3"}')"
 {
-expect "머지 → squash · pane p3 에 '[자동 리뷰 → web-fe] … 머지됨' 한 줄" 'grep -q "gh pr merge 7 .*--squash" "$FLOG" && grep -q "screen pane send-text p3 \[자동 리뷰 → web-fe\] PR web#7 @$S7 — 머지됨" "$FLOG" && grep -q -e "--enter\$" "$FLOG" && ! grep -q "send-keys" "$FLOG"' "$OUT
+expect "머지 → squash · 머지됨은 pane 에 넣지 않고 계획서 줄에만(할 일 없는 알림)" 'grep -q "gh pr merge 7 .*--squash" "$FLOG" && ! grep -q "send-text" "$FLOG" && ! grep -q "send-keys" "$FLOG" && grep -q "· 머지됨 — squash → dev ·" "$CORE/$PLANF"' "$OUT
 $(cat "$FLOG")"
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 보류
 OUT="$(run_confirms '{"id":"p3"}')"
-expect "보류 → 머지 안 함 · pane p3 에 '… 보류' 한 줄" '! grep -q "gh pr merge" "$FLOG" && grep -q "screen pane send-text p3 .*— 보류" "$FLOG"' "$OUT
+expect "보류 → 머지 안 함 · pane p3 에 '… 보류' 한 줄(머지됨이 아닌 결과는 그대로 넣는다)" '! grep -q "gh pr merge" "$FLOG" && grep -q "screen pane send-text p3 \[자동 리뷰 → web-fe\] PR web#7 @$S7 — 보류" "$FLOG" && grep -q -e "--enter\$" "$FLOG"' "$OUT
 $(cat "$FLOG")"
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 머지
 OUT="$(run_confirms '')"
 expect "pane 이 없으면 보내지 않는다(닫힌 세션을 다시 열지 않음) · 계획서 줄은 머지됨" '! grep -q "send-text" "$FLOG" && ! grep -q "delegate" "$FLOG" && grep -q "· 머지됨 — squash → dev ·" "$CORE/$PLANF"' "$OUT
 $(cat "$FLOG")"
-} > "$GRP"; grp_end "머지 결과 알림 — 머지 · 보류 · pane 없으면 안 보냄"
+} > "$GRP"; grp_end "머지 결과 알림 — 머지됨은 pane 에 안 넣음 · 보류는 넣음 · pane 없으면 안 보냄"
 
 # push 하자마자 대기열에(지시 1) — --auto-push 로 새 커밋을 올리면 그 HEAD 가 바로 대기열에 · 같은 HEAD 를 또 넣어도(현황판 안전망) 하나만
 echo more > "$WT/b.txt" && G -C "$WT" add b.txt && G -C "$WT" commit -q -m y

@@ -1040,6 +1040,7 @@ export const prBaseOf = (config, repoName) => {
 //   코드 줄(+ 와 - 합)이 150 이상 — 4개 이하 묶음 안에서 버그 수정은 95줄 이하, 새 기능은 151~361줄
 //   민감 경로 — 설정 파일(CONFIG_FILE_RE) · 훅 · 인증 · 비밀 · 권한 · 마이그레이션 · 스키마 · .env 는 크기와 상관없이 넓은 수정
 // 에이전트 표시 — 계획서 Checkpoint 의 "- Wide change: yes (<이유>)" 줄(에이전트가 새 기능 · 구조 변경 · 외부 계약처럼 줄 수로 안 보이는 것을 적는다)
+//   "- Wide change: no (<이유>)" 는 반대로 끈다 — 로직이 안 바뀐 변경(문구 · 번역 · 주석)의 파일 수 · 줄 수 기준만(민감 경로 · 1절 표시는 못 끈다 · 이유 없는 no 는 무시)
 export const WIDE_MIN_CODE_FILES = 5
 export const WIDE_MIN_CODE_LINES = 150
 export const WIDE_SENSITIVE_RE = /(^|\/)(hooks|migrations?|schemas?)\/|(^|\/)[^/]*(auth|oauth|secret|security|permission|guard|migration|schema)[^/]*$|(^|\/)\.env(\.|$)/i
@@ -1052,12 +1053,14 @@ export const isCodeFile = (filePath) => {
   return !/\.(md|markdown|mdx|txt|png|jpe?g|gif|svg|ico|webp|pdf|csv)$/i.test(path)
 }
 // 판정 — { wide, why }. files = [{ path, added, deleted }](git diff --numstat origin/<base>...HEAD) · flagged = 계획서 1절 표시(planRiskFlags) · marked = 에이전트 표시 이유('' 이면 없음)
+// off = 에이전트가 끈 이유(planWideOff · '' 이면 없음) — 코드 파일 수 · 줄 수 기준만 건너뛴다. 민감 경로 · 1절 표시 · yes 표시는 off 여도 그대로 넓은 수정
 // why 는 계획서 "- Auto merge:" 줄 괄호 안과 reviewer 지시에 그대로 들어간다(짧게)
-export const wideChangeVerdict = ({ files = [], flagged = [], marked = '' }) => {
+export const wideChangeVerdict = ({ files = [], flagged = [], marked = '', off = '' }) => {
   const sensitive = files.map((file) => file.path).filter((path) => CONFIG_FILE_RE.test(path) || WIDE_SENSITIVE_RE.test(path))
   if (sensitive.length) return { wide: true, why: `민감 경로 ${sensitive.slice(0, 3).join(' · ')}${sensitive.length > 3 ? ` 외 ${sensitive.length - 3}개` : ''}` }
   const code = files.filter((file) => isCodeFile(file.path))
   const lines = code.reduce((sum, file) => sum + (Number(file.added) || 0) + (Number(file.deleted) || 0), 0)
+  if (off && !flagged.length && !marked) return { wide: false, why: `에이전트 표시(no — ${oneLine(off, 80)})` }
   if (code.length >= WIDE_MIN_CODE_FILES) return { wide: true, why: `코드 파일 ${code.length}개 ≥ ${WIDE_MIN_CODE_FILES}` }
   if (lines >= WIDE_MIN_CODE_LINES) return { wide: true, why: `코드 ${lines}줄 ≥ ${WIDE_MIN_CODE_LINES}` }
   if (flagged.length) return { wide: true, why: `1절에 ${flagged.join(' · ')}` }
@@ -1067,12 +1070,23 @@ export const wideChangeVerdict = ({ files = [], flagged = [], marked = '' }) => 
 }
 // 에이전트 표시 줄 — "- Wide change: yes (<이유>)" · Checkpoint 절 안에서만 읽는다(본문 예시 · 옛 기록의 같은 모양 줄을 읽지 않게). 이유 문자열(없으면 '')
 const WIDE_LINE = /^- Wide change:\s*(yes|no)\b(?:\s*\((.*)\))?\s*$/
-export const planWideMark = (planText) => {
+// yes 와 no 가 둘 다 있으면 yes 가 이긴다(줄 순서와 상관없이) — Checkpoint 안의 표시 줄을 모두 본다
+const wideMarks = (planText) => {
   const lines = String(planText ?? '').split('\n')
-  const index = checkpointIndex(lines, (row) => WIDE_LINE.test(row))
-  if (index < 0) return ''
-  const hit = lines[index].match(WIDE_LINE)
-  return hit?.[1] === 'yes' ? (hit[2]?.trim() || '표시만') : ''
+  const range = checkpointRange(lines)
+  if (!range) return []
+  return lines.slice(range.start + 1, range.end).map((row) => row.match(WIDE_LINE)).filter(Boolean).map((hit) => ({ mark: hit[1], why: hit[2]?.trim() ?? '' }))
+}
+export const planWideMark = (planText) => {
+  const yes = wideMarks(planText).find((row) => row.mark === 'yes')
+  return yes ? (yes.why || '표시만') : ''
+}
+// 끄는 표시 — "- Wide change: no (<이유>)"(2026-11-26 사용자 확정). 문구 · 번역 · 주석처럼 로직이 안 바뀐 변경에만 에이전트가 적는다.
+// 이유 없는 no 는 받지 않는다('' — 숫자 기준대로) · yes 가 같이 있으면 '' (yes 가 이긴다). 이유 문자열(없으면 '')
+export const planWideOff = (planText) => {
+  const marks = wideMarks(planText)
+  if (marks.some((row) => row.mark === 'yes')) return ''
+  return marks.find((row) => row.mark === 'no' && row.why)?.why ?? ''
 }
 // 리뷰 문의 "- Auto merge:" 줄 결과 머리 — 계획서 4절 "리뷰를 기다리는 중 · 리뷰 때문에 멈춤"
 export const REVIEW_WAITING = '리뷰 기다리는 중'

@@ -12,6 +12,8 @@
  *        Actions 로 넘기기("actionsHandoff": true · ship.sh --direct-merge 가 부른다) — handoff/<브랜치> 로 push 만 하고 끝난다
  *   node scripts/pr-auto.mjs --direct-merge --plan <plans/…md> --repo <레포> --dir <워크트리>
  *        PR 끔 레포("autoPr": false) — PR 없이 작업 브랜치를 prBase 에 squash 로 바로 머지한다(ship.sh --direct-merge 가 부른다). 안전 조건은 PR 머지와 같다(검증은 끌 수 없다)
+ *   node scripts/pr-auto.mjs --wide --plan <plans/…md> --dir <워크트리> [--repo <레포>]
+ *        넓은 수정 판정만 본다(작업자가 끝낼 때 리뷰를 띄울지 — 미커밋 변경까지 · 아무것도 쓰지 않는다). "넓은 수정: 예(이유)" · "아니오(이유)"
  *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(현황판이 5분마다)
  *   node scripts/pr-auto.mjs --watch     뒤에서 돈다 — 대기열을 차례로 · 머지 확인 답을 30초마다 본다. 처리기는 하나만
  *
@@ -34,7 +36,7 @@
  *   - 막는 지적만 막는다(결정 E) — 지적마다 blocking · advisory. 권장(advisory)만 남으면 승인으로 보고 PR 댓글에만 남긴다
  */
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -58,7 +60,7 @@ import {
   PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
-  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planRiskFlags, planWideMark, wideChangeVerdict,
+  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planRiskFlags, planWideMark, planWideOff, wideChangeVerdict,
 } from './lib/pr-auto.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -425,10 +427,13 @@ const startShadowVerify = (job, config) => {
   try { spawn(process.execPath, args, { cwd: ROOT, detached: true, stdio: 'ignore' }).unref() } catch (error) { console.log(`  ⚠️ 그림자 전체 검증을 못 띄움: ${error.message}`) }
 }
 
-// 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만)
+// 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만).
+// 머지됨은 pane 에 넣지 않는다 — 받은 쪽이 할 일이 없는데 차례 하나를 쓴다(계획서 "- Auto review:" · "- Auto merge:" 줄 · 사건 기록에 이미 있다).
+// 보류 · 검증 대기 · 머지 실패는 그대로 넣는다
 const notifyResult = async (job, result, direct = false) => {
   const planPath = join(ROOT, job.plan)
   if (!existsSync(planPath)) return
+  if (String(result).startsWith(DIRECT_MERGED)) { console.log('  → 머지됨 — 결과는 계획서 줄에만(pane 에 넣지 않는다)'); return }
   const ref = workRefOf(readFileSync(planPath, 'utf8'))
   if (!ref.pane || !(await livePanes()).has(ref.pane)) return
   const agent = ref.agent || '작업 에이전트'
@@ -1098,7 +1103,7 @@ const directReviewGate = async (job, planPath) => {
   if (git(worktree, ['fetch', '--quiet', 'origin', base]) === null) return stop(`검증 대기 — origin/${base} 를 가져오지 못함`, 'fetch')
   const files = numstatFiles(git(worktree, ['diff', '--numstat', `origin/${base}...HEAD`]))
   const planText = readFileSync(planPath, 'utf8')
-  const verdict = wideChangeVerdict({ files, flagged: planRiskFlags(planText), marked: planWideMark(planText) })
+  const verdict = wideChangeVerdict({ files, flagged: planRiskFlags(planText), marked: planWideMark(planText), off: planWideOff(planText) })
   if (!verdict.wide) { console.log(`  리뷰 없이 — 넓은 수정 아님(${verdict.why})`); return true }
   const tree = git(worktree, ['rev-parse', 'HEAD^{tree}'])
   const latest = () => latestReviewResult(readFileSync(planPath, 'utf8'), { repo, branch, sha, tree })
@@ -1127,6 +1132,33 @@ const directReviewGate = async (job, planPath) => {
   if (result.verdict === '승인') return stop(`${REVIEW_STOPPED} — 승인 @${result.sha.slice(0, 7)} 이 지금 내용 @${sha.slice(0, 7)} 과 다름(같은 명령으로 다시) · 리뷰 ${rounds + 1}회`, 'review')
   if (rounds + 1 >= DIRECT_REVIEW_MAX) return stop(`${REVIEW_STOPPED} — 짧은 리뷰에서도 수정 필요 @${sha.slice(0, 7)} · 리뷰 ${rounds + 1}회 · 아테나가 이어받음`, 'review-rounds', { raise: true })
   return stop(`${REVIEW_STOPPED} — 수정 필요 @${sha.slice(0, 7)} · 리뷰 ${rounds + 1}회(고친 뒤 같은 명령으로 다시 — 고친 부분만 짧게 다시 본다)`, 'review')
+}
+
+// ── 넓은 수정 판정만 보기(--wide · 2026-11-26) — 작업자가 끝낼 때 리뷰를 띄울지 가르는 명령. 기준은 위 리뷰 문과 같은 wideChangeVerdict 하나다.
+// 커밋 전에 부르니 미커밋 변경까지 센다: 기준 브랜치와 갈라진 곳 → 지금 작업 폴더(추적 파일) + 새 파일(안 올린 것 · 줄 수 그대로 더한 줄).
+// fetch 하지 않는다(이미 받아 둔 origin/<prBase>). 레포는 --repo 가 없으면 메인 체크아웃 폴더 이름(ship.sh 와 같다). 끝 코드 0 = 판정함 · 2 = 판정 못 함
+const wideCheck = (planArg, repoArg, dir) => {
+  const unknown = (why) => { console.log(`넓은 수정: 판정 못 함(${why})`); return 2 }
+  if (!planArg || !dir) return unknown('--plan <계획서> --dir <워크트리> 가 필요하다')
+  const worktree = resolve(dir)
+  const common = git(worktree, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  if (!common) return unknown('git 레포가 아니다')
+  const repo = repoArg || basename(dirname(common))
+  const base = prBaseOf(loadConfig(ROOT), repo)
+  if (!base) return unknown(`${repo} 의 prBase 를 알 수 없다`)
+  const fork = git(worktree, ['merge-base', `origin/${base}`, 'HEAD'])
+  if (!fork) return unknown(`origin/${base} 와 갈라진 곳을 찾지 못했다`)
+  const tracked = numstatFiles(git(worktree, ['diff', '--numstat', fork]))
+  // 미추적 파일은 -z 로 — 기본 core.quotePath 면 한글 경로가 따옴표 · 이스케이프로 와서 읽지 못하고 0줄로 셌다(PR #376 자동 리뷰)
+  const fresh = String(git(worktree, ['ls-files', '-z', '--others', '--exclude-standard']) ?? '').split('\0').filter(Boolean).map((path) => {
+    let added = 0
+    try { added = readFileSync(join(worktree, path), 'utf8').split('\n').length } catch { /* 못 읽는 파일은 0줄 */ }
+    return { path, added, deleted: 0 }
+  })
+  const planText = readFileSync(planPathOf(planArg).path, 'utf8')
+  const verdict = wideChangeVerdict({ files: [...tracked, ...fresh], flagged: planRiskFlags(planText), marked: planWideMark(planText), off: planWideOff(planText) })
+  console.log(`넓은 수정: ${verdict.wide ? '예' : '아니오'}(${verdict.why})`)
+  return 0
 }
 
 // 머지 직전 확인 + 합치기 + push — 확인 요청에서 [머지] 를 골랐을 때와 설정이 auto 일 때 같은 길
@@ -1610,6 +1642,7 @@ if (!isMain) {
   // import 만
 } else if (flag('watch')) await watch()
 else if (flag('kick')) kick()
+else if (flag('wide')) process.exit(wideCheck(option('plan'), option('repo'), option('dir')))
 else if (flag('direct-merge')) {
   const done = await directMerge(option('plan'), option('repo'), option('dir'), option('repo-agent'))
   process.exit(done ? 0 : 1)

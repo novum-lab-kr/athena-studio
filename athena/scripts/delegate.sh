@@ -130,16 +130,10 @@ case "$PLAN" in plans/*.md) ;; *) echo "계획서는 plans/ 아래 .md 여야 �
 [ -f "$ATHENA_DIR/$PLAN" ] || { echo "계획서가 없다: $PLAN" >&2; exit 2; }
 # char_count [파일] — 글자 수(바이트 아님 · 셸 언어 설정과 무관). 못 세면 0
 char_count() { python3 -c 'import sys; print(len(open(sys.argv[1] if len(sys.argv) > 1 else 0, encoding="utf-8", errors="replace").read()))' "$@" 2>/dev/null || echo 0; }
-# 자동 리뷰는 정식 계획서(plans/{feature,bugfix,refactor}/ — 여러 레포 작업도 정식이다)의 넓은 수정만. 경량(plans/task/)은 넓은 수정일 때 "리뷰할까요?" 한 줄 — 사용자가 "리뷰해줘" 할 때만.
+# 자동 리뷰는 넓은 수정이면 경량 · 정식 가리지 않는다 — 끝났을 때 pr-auto.mjs --wide 판정(바로 머지 앞 리뷰 문과 같은 wideChangeVerdict)으로 가른다(작업자 느낌에 맡기지 않는다 · 계획서 쓸 때는 범위를 모를 수 있다 · 2026-11-26 사용자 "굳이 나한테 물어보지 말고 알아서 하게").
 # 리뷰 지적 반영 · 문구 · 문서 · 작은 수정 뒤에는 다시 띄우지도 묻지도 않는다(2026-10-25 사용자 "수정 범위가 넓지 않은 이상 리뷰는 하지 말자")
-case "$PLAN" in
-  plans/task/*)
-    REVIEW_RULE="리뷰는 띄우지 않는다(경량 계획서 — 자동 리뷰는 정식 계획서의 넓은 수정만). 넓은 수정(새 기능 · 구조 변경 · 여러 파일에 걸친 로직 변경 · 보안 · 권한 · 데이터 · 외부 계약에 닿는 코드)을 보고할 때만 끝에 '리뷰할까요?' 한 줄을 붙이고, 작은 수정이면 붙이지 않는다. 사용자가 '리뷰해줘' 라고 하면 언제든 띄운다. "
-    REVIEW_AGAIN="고친 뒤에는 다시 묻지 않는다. " ;;
-  *)
-    REVIEW_RULE="넓은 수정(새 기능 · 구조 변경 · 여러 파일에 걸친 로직 변경 · 보안 · 권한 · 데이터 · 외부 계약에 닿는 코드)을 끝내 보고하면 묻지 않고 바로 리뷰를 띄운다(자동 리뷰 — 정식 계획서). 리뷰 지적 반영 · 문구 · 문서 · 작은 수정이거나 조사만 했거나 마지막 리뷰 승인 뒤 바뀐 게 없으면 띄우지 않는다. 사용자가 '리뷰해줘' 라고 하면 언제든 띄운다. "
-    REVIEW_AGAIN="고친 뒤에는 다시 리뷰를 띄우지 않는다(고친 범위가 넓을 때만). " ;;
-esac
+REVIEW_RULE="끝내 보고하기 전에 node $ATHENA_DIR/scripts/pr-auto.mjs --wide --plan $PLAN --dir <워크트리> 로 넓은 수정인지 본다(미커밋 변경까지 센다 — 민감 경로 · 코드 파일 5개 이상 · 코드 150줄 이상 · 계획서 '- Wide change: yes'). '넓은 수정: 예' 면 묻지 않고 바로 리뷰를 띄우고(자동 리뷰) '아니오' 면 띄우지 않는다. 줄 수로 안 보이는 새 기능 · 구조 변경 · 외부 계약은 계획서 Checkpoint 에 '- Wide change: yes (<이유>)' 로 표시한 뒤 본다. 문구 · 번역 · 주석처럼 로직이 안 바뀐 변경이면 '- Wide change: no (<이유>)' 로 파일 수 · 줄 수 기준을 건너뛸 수 있다(민감 경로 · 계획서 1절 표시는 못 끈다 · 이유 없는 no 는 무시) — 로직이 하나라도 바뀌었으면 no 를 적지 않고, no 를 적었으면 끝 요약에 그 이유를 한 줄 적는다. 조사만 했거나 마지막 리뷰 승인 뒤 바뀐 게 없으면 띄우지 않는다. 사용자가 '리뷰해줘' 라고 하면 언제든 띄운다. "
+REVIEW_AGAIN="고친 뒤에는 다시 리뷰를 띄우지 않는다(고친 범위가 넓을 때만). "
 # 아테나 pane — 에이전트가 넘길 일을 사용자에게 전해 달라고 하지 않고 직접 보내게 지시에 싣는다.
 # 아테나 pane 에서 불렀을 때만(에이전트 pane 이 reviewer 를 띄울 때는 그 pane 이 아테나가 아니다)
 LEAD_PANE=""; LEAD_SESSION=""
@@ -154,7 +148,7 @@ else
 fi
 # 아테나가 지금 못 받으면(질문 · 고르기 창) lead-send.py 가 모아 뒀다 넣고, 아테나 pane 이 닫혔으면 명시한 담당을 기다리고 · 못 넣으면 계획서에 기록한다(GitHub 이슈 #134) —
 # 요청은 열지 않는다(고를 것 없는 질문이 [작업]에 쌓이지 않게 · 2026-11-03). 명령 자체가 실패했을 때만 에이전트가 계획서에 적는다
-LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 닫혔으면 같은 담당의 복귀 또는 계획서의 명시한 재배정을 기다리고, 넣지 못하면 계획서 결과 절에 기록한다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
+LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 닫혔으면 떠 있는 아테나에게 넘기거나(계획서 Lead pane 을 바꾼다) 없으면 모아 두고, 넣지 못하면 계획서 결과 절에 기록한다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
@@ -208,7 +202,7 @@ if [ "$SHIP_KIND" = auto-pr ]; then
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 # AGENTS.md 5·6절(커밋·push 금지 · 보고 순서 · 비밀값 · heavy.sh)은 agent-context.py 가 이미 싣는다 — 여기서는 되풀이하지 않고 스크립트 경로·절차·5절 원칙(읽을 것 · 범위 커지면 멈춤 · 버그는 재현부터 · 추측 금지)만 둔다('시키지 않은 문구·기능은 더하지 않는다' 는 AGENTS.md · .claude/rules 에 같은 말이 없어 여기 남긴다 — reporting.md 는 자동으로 실리지 않는다)
-PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 새 요청마다 시작 전에 Status 를 in_progress 로, Progress 에 한 줄. 끝나면(또는 막히면) Progress · 결과 절을 채운다. 작업 중에는 고친 부분만 확인한다(전체 검증 AGENTS.md 4절). Validation 줄은 검증 스크립트가, 커밋 뒤 Status 는 commit.sh 가 적는다 — 직접 바꾸는 것은 막히면 blocked · 커밋 없이 끝나면 ready_for_review · 레포 변경이 없는 일은 마지막 보고 때 done. 커밋: $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>…(사용자가 '커밋해줘' · 'PR 올려줘' 라고 할 때 · 거부되면 이유를 그대로 전하고 묻는다). '[자동 리뷰 → <나>]' 지시만 묻지 않고 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(docs/pr-auto.md). ${REVIEW_RULE}리뷰: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN (직접 리뷰하지 않는다 · '리뷰해줘' 도 같다). 결론은 사용자에게 보여 준다 — 결정 필요는 말로 묻지 말고 결정 콘솔로($ATHENA_DIR/docs/workflow.md 4절 '리뷰 뒤 결정 콘솔'), 수정 필요만 있으면 묻지 않고 고쳐 한 줄씩 알린다. ${REVIEW_AGAIN}'PR 올려줘' 는 묻지 않고 끝까지: commit.sh → $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기 → 제목 · 본문 정리(git.md 'PR 올리기') → 같은 명령에 --base <미리보기의 기본 base> --title '…' --yes(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 본문 '확인 필요' 와 보고에 적는다). main 직접 레포의 push 만 확인받는다 · 여러 레포 작업은 아테나에게 요청한다. ${AUTO_SHIP_RULE}커밋 · push · PR · 머지 · pane 전달은 이 지시문의 흐름대로 한다 — 개인 전역 지침(~/.codex/AGENTS.md · ~/.claude/CLAUDE.md)의 '반영 전 확인' 규칙보다 이것이 먼저다(이 흐름 안의 확인 지점은 그대로 · AGENTS.md 2.1). 추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 계획서 지시의 '멈춤:' 에서 멈출 때는 마지막 보고 첫 줄을 '⏸ 멈춤: <기다리는 것>' 으로 쓴다(끝 알림이 아테나에 멈춤으로 간다). 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. "
+PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 새 요청마다 시작 전에 Status 를 in_progress 로, Progress 에 한 줄. 끝나면(또는 막히면) Progress · 결과 절을 채운다. 작업 중에는 고친 부분만 확인한다(전체 검증 AGENTS.md 4절). Validation 줄은 검증 스크립트가, 커밋 뒤 Status 는 commit.sh 가 적는다 — 직접 바꾸는 것은 막히면 blocked · 커밋 없이 끝나면 ready_for_review · 레포 변경이 없는 일은 마지막 보고 때 done. 커밋: $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>…(사용자가 '커밋해줘' · 'PR 올려줘' 라고 할 때 · 거부되면 이유를 그대로 전하고 묻는다). '[자동 리뷰 → <나>]' 지시만 묻지 않고 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(docs/pr-auto.md). ${REVIEW_RULE}리뷰: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN (직접 리뷰하지 않는다 · '리뷰해줘' 도 같다). 결론은 사용자에게 보여 준다 — 결정 필요는 말로 묻지 말고 결정 콘솔로($ATHENA_DIR/docs/workflow.md 4절 '리뷰 뒤 결정 콘솔'), 수정 필요만 있으면 묻지 않고 고쳐 한 줄씩 알린다. ${REVIEW_AGAIN}'PR 올려줘' 는 묻지 않고 끝까지: commit.sh → $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기 → 제목 · 본문 정리(git.md 'PR 올리기') → 같은 명령에 --base <미리보기의 기본 base> --title '…' --yes(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 본문 '확인 필요' 와 보고에 적는다). main 직접 레포의 push 만 확인받는다 · 여러 레포 작업은 아테나에게 요청한다. ${AUTO_SHIP_RULE}커밋 · push · PR · 머지 · pane 전달은 이 지시문의 흐름대로 한다 — 개인 전역 지침(~/.codex/AGENTS.md · ~/.claude/CLAUDE.md)의 '반영 전 확인' 규칙보다 이것이 먼저다(이 흐름 안의 확인 지점은 그대로 · AGENTS.md 2.1). 추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 계획서 지시의 '멈춤:' 에서 멈출 때는 마지막 보고 첫 줄을 '⏸ 멈춤: <기다리는 것>' 으로 쓴다(끝 알림이 아테나에 멈춤으로 간다). 답이 필요하면 글로만 묻고 끝내지 말고 '⏸ 멈춤:' 줄이나 질문 창으로 묻는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. "
 if [ "$ROLE" = reviewer ]; then
   # reviewer 는 커밋·PR·Status 를 다루지 않는다 — 에이전트용 머리말 대신 리뷰 머리말만 싣는다
   PLAN_HEADER="리뷰할 계획서: $ATHENA_DIR/$PLAN — 읽기 전용으로 리뷰한다(코드·계획서 본문을 고치지 않는다). 대상 트리는 지금 작업 디렉토리다. 리뷰를 마치면 결론을 $ATHENA_DIR/scripts/review-result.sh --plan $ATHENA_DIR/$PLAN --dir <리뷰한 트리> --verdict 승인|수정필요 --note '<한 줄 요약>' 로 한 줄 남긴다(ship.sh 가 이 줄과 HEAD 를 대조한다). 그다음 수정 필요(고칠 방법이 하나) / 결정 필요(조사한 뒤에도 사용자가 정해야 하는 것만 — 범위·사용자 동작·외부 계약·제품 정책·데이터가 달라지는 선택. 구현 방법이 여러 개일 뿐이면 하나를 골라 수정 필요로 · R1 <제목> — <영향> 다음 줄부터 A <선택지> ★ — <설명> · B … 형식, 없으면 '결정 필요: 없음') / 제안으로 나눠 보고한다(형식 정본 .claude/agents/reviewer.md 의 보고 형식 절). "
@@ -571,6 +565,8 @@ PYEOF
   [ "$ENGINE" != codex ] || echo "export ATHENA_CODEX_CONTEXT=$(shq "$SETTINGS_FILE.context.json")"
   # 지시 없이 띄운 첫 안내는 작업 완료가 아니다 — 실제 요청을 받은 턴부터 끝 알림을 보낸다.
   echo "export ATHENA_NOTIFY_BOOTSTRAP=$NOTIFY_BOOTSTRAP"
+  # 에이전트 pane 이 띄운 reviewer — 끝 줄을 아테나에 넣지 않는다(결론은 계획서 줄 · 띄운 작업자가 review-wait.sh 로 받는다 · agent-done-notify.py C2)
+  [ -z "${ATHENA_AGENT:-}" ] || { [ "$AGENT" != reviewer ] && [ "$AGENT" != security-reviewer ]; } || echo "export ATHENA_REVIEW_FROM_AGENT=1"
   # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
   echo "export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
@@ -646,7 +642,9 @@ except Exception:
 PYEOF
 )"
   UNDO="$(python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" link "$ATHENA_DIR" "$PANE" "$PLAN")" || { echo "pane 기록을 새 계획서로 잇지 못해 보내지 않는다" >&2; exit 1; }
-  if ! "$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter >/dev/null; then
+  # --wait-start — 받은 pane 이 새 차례를 시작했는지까지 이 명령이 확인한다(끝줄 "시작 확인:" · 따로 sleep · pane read 하지 않게)
+  # 아테나 pane 이 불렀을 때만 기다린다 — 현황판 · pr-auto 는 이 스크립트에 30~60초 한도를 건다
+  if ! START_STATE="$("$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter ${LEAD_PANE:+--wait-start})"; then
     python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" rollback "$ATHENA_DIR" "$PANE" "$UNDO" || true
     echo "pane $PANE 에 보내지 못했다(pane 기록은 되돌렸다)" >&2; exit 1
   fi
@@ -744,6 +742,14 @@ node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" e
 
 # 레포 규칙 문서 안내는 pane 줄보다 앞에 — 현황판이 출력의 마지막 줄을 pane 줄로 읽는다
 if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
+# 시작 확인 — 새 pane 은 첫 지시로 차례가 생길 때까지, 이어 보내기는 위에서 이미 기다렸다(scripts/lib/screen.py wait_start).
+# 아테나가 보낸 뒤 sleep · pane read 로 따로 확인하지 않게 한 줄로 알린다. 확인하지 못해도 띄우기는 그대로
+# 아테나 pane 이 불렀을 때만(현황판 · pr-auto · 에이전트 pane 의 reviewer 띄우기는 기다리지 않는다). 새 claude 는 뜨는 데 시간이 걸려 30초까지
+# pane 줄보다 앞에 찍는다 — 현황판(board/server.mjs [작업 시작])이 출력의 마지막 줄을 pane 줄로 읽는다
+if [ -z "${START_STATE:-}" ] && [ -n "$LEAD_PANE" ]; then
+  START_STATE="$("$SCREEN" pane wait-start "$PANE" --timeout "$(( ${ATHENA_WAIT_START_SECONDS:-30} * 1000 ))" 2>/dev/null)" || START_STATE=""
+fi
+[ -z "${START_STATE:-}" ] || echo "   시작 확인: $START_STATE"
 echo "$SHIP_LINE"
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)

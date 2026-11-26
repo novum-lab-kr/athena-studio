@@ -267,5 +267,23 @@ elif a[:2] == ['pane','run']:
     check('닫힌 발신자는 실제 위임 경로에서 pane 생성 전 거부', result.returncode == 1 and got is None and not calls and '아테나 발신자를 확인하지 못해' in result.stderr)
     env.pop('FAKE_LEAD_CLOSED')
     check('기존 사용자 설정·훅 파일 유지', (codex_home / 'config.toml').read_text() == '# USER_CONFIG_SENTINEL\n' and (codex_home / 'hooks.json').read_text() == '{"hooks":{}}\n')
+    # 에이전트 pane 이 --here 로 reviewer 를 띄움(아테나 pane 아님 → 시작 확인을 기다리지 않아 START_STATE 가 없다) —
+    # set -u 로 시작 확인 줄에서 죽지 않고 위험한 수정이면 security-reviewer 까지 띄운다(issues/20261126-athena-studio-delegate-here-START_STATE-unbound.md)
+    risky = root / 'risky'; risky.mkdir()
+    def git(*args): subprocess.run(['git', '-C', str(risky), *args], check=True, capture_output=True)
+    git('init', '-q', '-b', 'main'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't')
+    (risky / 'a.js').write_text('x\n'); git('add', '.'); git('commit', '-qm', 'base'); git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+    git('checkout', '-qb', 'feat/x'); (risky / 'a.js').write_text("require('child_process').exec('ls')\n")
+    (core / 'repos/web').unlink(); (core / 'repos/web').symlink_to(risky)
+    cfg['repos'][0].update(autoPr=False, autoMergeManual=False, autoMergeConfirm=False, autoReview=True)
+    (core / 'pack/pack.json').write_text(json.dumps(cfg))
+    plan.write_text('# 시험\n\n## Checkpoint\n- Status: in_progress\n- Work ref: pending\n')
+    log.write_text(''); env['READY_TOOLS'] = 'claude'
+    agent_env = dict(env, ATHENA_AGENT='fe')
+    result = subprocess.run(['bash', str(core/'scripts/delegate.sh'), 'reviewer', '리뷰', '--plan', 'plans/task/test.md', '--cwd', str(risky), '--here'], env=agent_env, cwd=core, capture_output=True, text=True)
+    runs = [json.loads(line) for line in log.read_text().splitlines() if line.startswith('{')]
+    ok = result.returncode == 0 and 'unbound' not in result.stderr and '🛡 위험한 수정' in result.stdout and 'security-reviewer' in plan.read_text() and len(runs) == 2
+    check('에이전트 pane 의 --here reviewer → 죽지 않고 security-reviewer 도 띄움', ok)
+    if not ok: print(f'{result.returncode=}\n{result.stdout[-800:]}\n{result.stderr[-800:]}\nrunner 수: {len(runs)}', flush=True)
 sys.exit(fail)
 PY

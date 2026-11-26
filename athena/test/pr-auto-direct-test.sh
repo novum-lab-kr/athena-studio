@@ -225,7 +225,7 @@ gate_reset; DBRANCH=feat/wide direct_case "확인 후 머지 레포도 넓은 �
 } > "$GRP"; grp_end "넓은 수정 리뷰 문 — 작은 수정은 그대로 · 결론 없음 · 수정 필요 · 다시 안 띄움 · 승인 · 이미 승인 · 짧은 리뷰 · 상한 · 확인 후도 먼저"
 # 민감 경로 · 에이전트 표시 · 줄 수 — 판정 함수(스크립트 기준값의 근거는 lib 주석 · 계획서 Decisions)
 node --input-type=module -e "
-  const { wideChangeVerdict, planWideMark, directReviewRounds, WIDE_MIN_CODE_FILES, WIDE_MIN_CODE_LINES } = await import('$DCORE/scripts/lib/pr-auto.mjs')
+  const { wideChangeVerdict, planWideMark, planWideOff, directReviewRounds, WIDE_MIN_CODE_FILES, WIDE_MIN_CODE_LINES } = await import('$DCORE/scripts/lib/pr-auto.mjs')
   const file = (path, added = 1, deleted = 0) => ({ path, added, deleted })
   const checks = [
     [wideChangeVerdict({ files: [file('docs/a.md', 500), file('README.md', 50)] }), false, '문서만'],
@@ -242,6 +242,13 @@ node --input-type=module -e "
     [wideChangeVerdict({ files: [file('src/a.mjs', 1)], marked: '새 기능' }), true, '에이전트 표시(새 기능)'],
     [wideChangeVerdict({ files: [file('docs/a.md', 1)], marked: '새 기능' }), true, '에이전트 표시(새 기능)'],
     [wideChangeVerdict({ files: [] }), false, '바뀐 파일 없음'],
+    // 끄는 표시(- Wide change: no (<이유>) · 2026-11-26) — 파일 수 · 줄 수 기준만 건너뛴다. 민감 경로 · 1절 표시 · yes 표시는 그대로 넓은 수정
+    [wideChangeVerdict({ files: [1, 2, 3, 4, 5].map((n) => file('src/f' + n + '.mjs', 50)), off: '문구만' }), false, '에이전트 표시(no — 문구만)'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1), file('scripts/hooks/x.py', 1)], off: '문구만' }), true, '민감 경로 scripts/hooks/x.py'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1), file('package.json', 1)], off: '문구만' }), true, '민감 경로 package.json'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1)], flagged: ['외부 계약'], off: '문구만' }), true, '1절에 외부 계약'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1)], marked: '새 기능', off: '문구만' }), true, '에이전트 표시(새 기능)'],
+    [wideChangeVerdict({ files: [1, 2, 3, 4, 5].map((n) => file('src/f' + n + '.mjs', 5)), off: '' }), true, '코드 파일 5개 ≥ ' + WIDE_MIN_CODE_FILES],
     [wideChangeVerdict({ files: [file('athena/scripts/board/index.html', 150, 50)] }), true, '코드 200줄 ≥ ' + WIDE_MIN_CODE_LINES],
     [wideChangeVerdict({ files: [1, 2, 3, 4, 5].map((n) => file('src/renderer/v' + n + '.htm', 1)) }), true, '코드 파일 5개 ≥ ' + WIDE_MIN_CODE_FILES],
     [wideChangeVerdict({ files: [file('src/renderer/tray.html', 10)] }), false, '코드 파일 1개 · 10줄'],
@@ -252,10 +259,14 @@ node --input-type=module -e "
   if (planWideMark('## Checkpoint\n- Wide change: yes (구조 변경)\n## 1.') !== '구조 변경') { bad += 1; console.log('  ✖ Checkpoint 의 Wide change 줄을 못 읽음') }
   if (planWideMark('## 1.\n- Wide change: yes (예시)\n## Checkpoint\n- Status: x') !== '') { bad += 1; console.log('  ✖ Checkpoint 밖의 Wide change 줄을 읽음') }
   if (planWideMark('## Checkpoint\n- Wide change: no') !== '') { bad += 1; console.log('  ✖ Wide change: no 를 표시로 읽음') }
+  if (planWideOff('## Checkpoint\n- Wide change: no (번역만)\n## 1.') !== '번역만') { bad += 1; console.log('  ✖ Wide change: no (이유) 를 못 읽음') }
+  if (planWideOff('## Checkpoint\n- Wide change: no\n- Wide change: no ()') !== '') { bad += 1; console.log('  ✖ 이유 없는 no 를 받음') }
+  if (planWideOff('## Checkpoint\n- Wide change: no (문구만)\n- Wide change: yes (새 기능)') !== '' || planWideMark('## Checkpoint\n- Wide change: no (문구만)\n- Wide change: yes (새 기능)') !== '새 기능') { bad += 1; console.log('  ✖ yes 와 no 가 둘 다 있으면 yes 가 이겨야 한다') }
+  if (planWideOff('## 1.\n- Wide change: no (예시)\n## Checkpoint\n- Status: x') !== '') { bad += 1; console.log('  ✖ Checkpoint 밖의 no 줄을 읽음') }
   if (directReviewRounds('- Auto merge: web feat/x @abc1234 · 리뷰 때문에 멈춤 — 수정 필요 · 리뷰 1회 · 2026-11-04 10:00', 'web', 'feat/x') !== 1) { bad += 1; console.log('  ✖ 리뷰 횟수') }
   if (directReviewRounds('- Auto merge: web feat/x @abc1234 · 머지됨 — squash · 리뷰 1회 · 2026-11-04 10:00', 'web', 'feat/x') !== 0) { bad += 1; console.log('  ✖ 머지됨 줄의 리뷰 횟수는 0') }
   if (bad) process.exit(1)
-  console.log('  ✔ 넓은 수정 판정 — 코드 파일 ≥ ' + WIDE_MIN_CODE_FILES + ' · 코드 줄 ≥ ' + WIDE_MIN_CODE_LINES + ' · 민감 경로 · 1절 표시 · 에이전트 표시(Checkpoint 안에서만) · 문서는 세지 않음 · html 은 docs/ 밖이면 코드')
+  console.log('  ✔ 넓은 수정 판정 — 코드 파일 ≥ ' + WIDE_MIN_CODE_FILES + ' · 코드 줄 ≥ ' + WIDE_MIN_CODE_LINES + ' · 민감 경로 · 1절 표시 · 에이전트 표시(Checkpoint 안에서만) · 끄는 표시(no + 이유 — 민감 경로 · 1절 · yes 는 못 끔) · 문서는 세지 않음 · html 은 docs/ 밖이면 코드')
 " || FAIL=1
 # 보안 검토 문(security-reviewer · 2026-11-08) — "- Security result:" 에 높음이 남으면 바로 머지 · 넘기기 · PR 머지를 막고 담당 pane 에 고칠 것을 보낸다. 중간 이하는 통과
 echo; echo "보안 검토 문(securityGate)"
@@ -353,6 +364,45 @@ handoff_case "넘기기 — 넓은 수정 + 승인 → 리뷰 문을 지나 넘�
 grep -q "리뷰 승인 @${DMORE:0:7}" "$TMP/direct.out" && grep -q 'athena-handoff.yml 가 없다' "$TMP/direct.out" && echo "  ✔ 승인 뒤 넘기기 단계(workflow 확인)까지 갔다" || { echo "  ✖ 승인 뒤 넘기기 단계"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
 } > "$GRP"; grp_end "Actions 넘기기도 같은 리뷰 문 — 승인 없이는 handoff 안 밂"
 
+
+# ── 넓은 수정 판정만 보기(--wide · 2026-11-26) — 작업자가 끝낼 때 부른다 · 리뷰 문과 같은 기준 · 미커밋 변경 · 새 파일까지 센다 · 아무것도 쓰지 않는다 ─────
+echo; echo "넓은 수정 판정만 보기(pr-auto.mjs --wide)"
+wide_of() {   # <브랜치> [계획서에 붙일 줄] → 출력 한 줄(끝 코드는 WIDE_RC)
+  DG checkout -q "$1"
+  printf '{ "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main" } ] }\n' > "$DCORE/athena.config.json"
+  printf '# 시험 제목\n## Checkpoint\n- Status: in_progress\n%s' "${2:-}" > "$DCORE/plans/task/x.md"
+  WIDE_OUT="$(env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" "$DCORE/scripts/pr-auto.mjs" --wide --plan plans/task/x.md --repo "${WIDE_REPO:-web}" --dir "$DWT" 2>&1)"; WIDE_RC=$?
+}
+{
+wide_of feat/x; WIDE_BEFORE="$(cat "$DCORE/plans/task/x.md")"
+expect "작은 수정(문서 1개) → 아니오" '[ "$WIDE_OUT" = "넓은 수정: 아니오(문서만 1개)" ] && [ $WIDE_RC = 0 ]' "$WIDE_OUT"
+expect "계획서에 아무것도 쓰지 않는다" '[ "$(cat "$DCORE/plans/task/x.md")" = "$WIDE_BEFORE" ]'
+wide_of feat/wide
+expect "커밋된 코드 파일 5개 이상 → 예" 'printf "%s" "$WIDE_OUT" | grep -Eq "^넓은 수정: 예\(코드 파일 [0-9]+개 ≥ 5\)$" && [ $WIDE_RC = 0 ]' "$WIDE_OUT"   # feat/wide 는 위 사례들이 커밋을 더해 5개 이상
+# 미커밋 — 추적 파일 고침 1 + 새 파일 4(안 올린 것) = 코드 파일 5개
+DG checkout -q feat/sec; printf 'export const more = 1\n' >> "$DWT/run.mjs"
+for n in 1 2 3 4; do printf 'export const n%s = %s\n' "$n" "$n" > "$DWT/new$n.mjs"; done
+wide_of feat/sec
+expect "미커밋 변경 + 새 파일까지 센다 → 예" '[ "$WIDE_OUT" = "넓은 수정: 예(코드 파일 5개 ≥ 5)" ]' "$WIDE_OUT"
+rm -f "$DWT"/new[1-4].mjs; DG checkout -q -- run.mjs
+# 한글 이름 새 파일 — 기본 core.quotePath 면 ls-files 가 따옴표 · 이스케이프 경로를 줘 0줄로 셌다(PR #376 자동 리뷰) → -z 로 원래 경로
+DG checkout -q feat/x; for n in $(seq 150); do printf 'export const k%s = %s\n' "$n" "$n"; done > "$DWT/새기능.mjs"
+wide_of feat/x
+expect "한글 이름 새 파일 150줄도 센다 → 예" 'printf "%s" "$WIDE_OUT" | grep -Eq "^넓은 수정: 예\(코드 [0-9]+줄 ≥ 150\)$"' "$WIDE_OUT"
+rm -f "$DWT/새기능.mjs"
+wide_of feat/wide '- Wide change: no (문구만 바꿈)
+'
+expect "코드 파일 5개 이상 + Wide change: no (이유) → 아니오" '[ "$WIDE_OUT" = "넓은 수정: 아니오(에이전트 표시(no — 문구만 바꿈))" ]' "$WIDE_OUT"
+wide_of feat/wide '- Wide change: no
+'
+expect "이유 없는 no 는 무시 → 숫자 기준대로 예" 'printf "%s" "$WIDE_OUT" | grep -q "^넓은 수정: 예(코드 파일"' "$WIDE_OUT"
+wide_of feat/x '- Wide change: yes (새 기능)
+'
+expect "계획서 Wide change: yes 표시 → 예" '[ "$WIDE_OUT" = "넓은 수정: 예(에이전트 표시(새 기능))" ]' "$WIDE_OUT"
+WIDE_REPO=nope wide_of feat/x
+expect "prBase 를 모르는 레포 → 판정 못 함 · 끝 코드 2" 'printf "%s" "$WIDE_OUT" | grep -q "^넓은 수정: 판정 못 함(nope 의 prBase" && [ $WIDE_RC = 2 ]' "$WIDE_OUT"
+DG checkout -q feat/x
+} > "$GRP"; grp_end "--wide — 문서만 아니오 · 코드 5개 예 · 미커밋 · 새 파일 · 표시 줄 · 판정 못 함"
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL

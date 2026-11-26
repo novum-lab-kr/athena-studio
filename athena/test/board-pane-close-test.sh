@@ -125,10 +125,10 @@ for _ in $(seq 1 100); do
   sleep 0.2
 done
 
-node - "$TMP" <<'EOF'
+node - "$TMP" "$CORE" <<'EOF'
 const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
-const [tmp] = process.argv.slice(2)
+const [tmp, core] = process.argv.slice(2)
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
 const read = (path) => { try { return readFileSync(path, 'utf8') } catch { return '' } }
@@ -141,7 +141,8 @@ for (const [pane, why] of [['p8', '사용자가 봄'], ['p9', '미커밋 변경'
   check(`${why} → 안 닫음(${pane})`, !closed.has(pane), [...closed].join(' '))
 }
 const notes = calls.filter((args) => args[1] === 'pane' && args[2] === 'run' && String(args[4]).includes('🚪'))
-check('아테나(Lead pane p1)에 닫은 pane 한 줄', notes.some((args) => args[3] === 'p1' && args[4] === '[현황판 → 아테나] 🚪 p6 닫음 — 맡은 일이 끝남(plans/task/20261112-merged.md)'), JSON.stringify(notes))
+check('닫은 pane 알림을 아테나 pane 에 넣지 않는다(할 일 없는 알림)', notes.length === 0, JSON.stringify(notes))
+check('닫은 것은 묶인 계획서 Checkpoint 에 한 줄(- Pane closed:)', /^- Pane closed: p6 — 맡은 일이 끝남\(.+\)$/m.test(read(join(core, 'plans/task/20261112-merged.md'))), read(join(core, 'plans/task/20261112-merged.md')))
 check('닫기 직전에 다시 본다(p16 — 취소 기록)', /닫기 취소/.test(log) && log.includes('p16'), log)
 check('pane 안 프로그램을 끄는 키는 넣지 않는다(C-c 없음)', !calls.some((args) => args[2] === 'send-keys'), JSON.stringify(calls.filter((args) => args[2] === 'send-keys')))
 console.log()

@@ -7,14 +7,17 @@ $ scripts/screen
   name                                         안내 글에 쓸 화면 이름 한 줄(Athena Studio …)
   capabilities [--has <기능>[,<기능>…]]          백엔드 기능 목록 · --has 는 다 있으면 0
   pane current                                 서버가 정한 지금 pane(self 와 다르다 — 환경이 없으면 포커스된 pane)
-  pane list [--tab T] [--workspace W] [--label L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]
+  pane list [--tab T] [--workspace W] [--label L] [--cwd D] [--agent-only] [--mine] [--prefer-tab T] [--prefer-workspace W]
                                                (T·W 에 self 를 쓰면 부른 pane 의 탭·workspace) · --cwd 는 cwd 나 foreground_cwd 의 실제 경로가 D 인 것
+                                               --mine 은 부른 아테나 pane 이 맡은 계획서(Lead pane)에 묶인 pane 만(plan · turn 칸이 붙는다) · --format brief 는 pane 마다 한 줄
   pane get <pane> · pane is-shell <pane>(빈 셸이면 0)
   pane read <pane> [--lines N] [--source S]    출력 그대로(글자 · 데몬이 못 하는 옵션 --read-format · --ansi · --raw 는 usage)
   pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
   pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음)
-  pane send-text <pane> <글> [--enter](글 뒤 Enter 까지) · pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
+  pane send-text <pane> <글> [--enter [--wait-start]](글 뒤 Enter 까지 · --wait-start 는 받은 에이전트가 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄 · 일하는 중이면 기다리지 않고 queued)
+  pane wait-start <pane> [--timeout MS]        방금 띄운 에이전트 pane 이 첫 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄
+  pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
   open-url <주소>                              studio 면 그 본체 창의 옆 브라우저(localhost) · 못 하면(none · 옛 데몬) 기본 브라우저(open)
@@ -63,5 +66,5 @@ $ ATHENA_SCREEN=studio scripts/screen pane list --format yaml
 --- exit 2
 --- stdout
 --- stderr
-{"error": "usage", "message": "--format 은 json · id · ids · sh: yaml"}
+{"error": "usage", "message": "--format 은 json · id · ids · sh · brief: yaml"}
 --- screen

@@ -40,6 +40,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 FORWARD_STDERR = False   # CLI(main)만 켠다 — 성공해도 데몬 CLI 의 경고를 표준오류로. 파이썬 훅은 받아 버린다
 
@@ -300,6 +301,38 @@ class StudioBackend(Backend):
 BACKENDS = {'studio': StudioBackend, 'none': NoneBackend}
 
 
+# 보낸 글을 에이전트가 받아 새 차례를 시작했는지 — 차례 상태 파일(state/agent-turn/<pane>.json · scripts/lib/agent_turn.py)의 turn 이
+# 보내기 전과 달라지면 started. 끝까지 안 바뀌면 선택 창이 떠 있는지 한 번 보고 '선택 창' · 아니면 idle.
+# 보낸 뒤 sleep · pane read 로 따로 확인하던 턴을 이 한 번으로 줄인다(위임 에이전트 pane 전용 — 훅이 없는 pane 은 늘 idle)
+WAIT_START_SECONDS = float(os.environ.get('ATHENA_WAIT_START_SECONDS') or 20)
+
+
+def _turn_id(pane):
+    import agent_turn
+    return str(agent_turn.read_turn(pane).get('turn') or '')
+
+
+def _turn_state(pane):
+    import agent_turn
+    return str(agent_turn.read_turn(pane).get('state') or '')
+
+
+def wait_start(pane, before, seconds=None):
+    import agent_turn
+    if agent_turn.pack_state() is None:
+        return 'idle'   # 차례 상태 파일이 없는 구조 — 기다려도 알 수 없다
+    deadline = time.monotonic() + (WAIT_START_SECONDS if seconds is None else seconds)
+    while True:
+        turn = _turn_id(pane)
+        if turn and turn != before:
+            return 'started'
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
+    import pane_request
+    return '선택 창' if pane_request.pane_menu(pane) is True else 'idle'
+
+
 def _configured_screen():
     """이 아테나 폴더의 athena.config.json(이 컴퓨터 설정) "screen" — studio·none·auto 문자열만. 없거나 읽지 못하거나 다른 값(옛 설정에 남은 다른 백엔드 이름 등)이면 ''(자동)."""
     config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'athena.config.json')
@@ -373,14 +406,17 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   name                                         안내 글에 쓸 화면 이름 한 줄(Athena Studio …)
   capabilities [--has <기능>[,<기능>…]]          백엔드 기능 목록 · --has 는 다 있으면 0
   pane current                                 서버가 정한 지금 pane(self 와 다르다 — 환경이 없으면 포커스된 pane)
-  pane list [--tab T] [--workspace W] [--label L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]
+  pane list [--tab T] [--workspace W] [--label L] [--cwd D] [--agent-only] [--mine] [--prefer-tab T] [--prefer-workspace W]
                                                (T·W 에 self 를 쓰면 부른 pane 의 탭·workspace) · --cwd 는 cwd 나 foreground_cwd 의 실제 경로가 D 인 것
+                                               --mine 은 부른 아테나 pane 이 맡은 계획서(Lead pane)에 묶인 pane 만(plan · turn 칸이 붙는다) · --format brief 는 pane 마다 한 줄
   pane get <pane> · pane is-shell <pane>(빈 셸이면 0)
   pane read <pane> [--lines N] [--source S]    출력 그대로(글자 · 데몬이 못 하는 옵션 --read-format · --ansi · --raw 는 usage)
   pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
   pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음)
-  pane send-text <pane> <글> [--enter](글 뒤 Enter 까지) · pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
+  pane send-text <pane> <글> [--enter [--wait-start]](글 뒤 Enter 까지 · --wait-start 는 받은 에이전트가 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄 · 일하는 중이면 기다리지 않고 queued)
+  pane wait-start <pane> [--timeout MS]        방금 띄운 에이전트 pane 이 첫 차례를 시작했는지 기다려 started · idle · 선택 창 한 줄
+  pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
   open-url <주소>                              studio 면 그 본체 창의 옆 브라우저(localhost) · 못 하면(none · 옛 데몬) 기본 브라우저(open)
@@ -390,7 +426,7 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
 
 VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--read-format', '--cwd', '--prefer-tab', '--prefer-workspace',
                '--target', '--direction', '--ratio', '--env', '--lines', '--source', '--match', '--regex', '--timeout'}
-BOOL_FLAGS = {'--agent-only', '--focus', '--no-focus', '--ansi', '--raw'}
+BOOL_FLAGS = {'--agent-only', '--mine', '--focus', '--no-focus', '--ansi', '--raw'}
 
 
 def _parse(args):
@@ -431,8 +467,41 @@ def _need(positional, count, what):
     return positional
 
 
-def _filter_panes(screen, panes, flags):
+def _mine(panes, lead, unowned=None):
+    """부른 아테나 pane(lead)이 맡은 계획서에 묶인 pane 만 — pane 기록(state/pane-sessions/<pane>.json)의 plan 이 가리키는 계획서의
+    "- Lead pane:" 이 lead 인 것. pane 마다 plan(계획서) · turn(차례 상태 working · done · asking … — scripts/lib/agent_turn.py)을 붙인다.
+    아테나 창이 여럿일 때 다른 아테나의 pane 을 읽지 않게(토큰 절감 F3). 팩 데이터가 없거나 부른 pane 을 모르면 [].
+    unowned(list)를 주면 담당 없는 pane — 계획서 Lead pane 이 비었거나 지금 없는 pane 인 것 — 을 거기에 담는다(어느 아테나의 목록에도 안 나오는 것을 놓치지 않게 · H4)"""
+    import re
+    import agent_turn
+    base = agent_turn.pack_state()
+    if base is None or not lead:
+        return []
+    found = []
+    alive = {pane['id'] for pane in panes}
+    for pane in panes:
+        try:
+            plan = str(json.loads((base / 'pane-sessions' / f'{pane["id"]}.json').read_text(encoding='utf-8')).get('plan') or '')
+        except (OSError, ValueError):
+            continue
+        path = agent_turn.plan_path(plan)
+        if path is None:
+            continue
+        try:
+            owner = re.search(r'^- Lead pane:[ \t]*(\S+)', path.read_text(encoding='utf-8'), re.M)
+        except OSError:
+            continue
+        if owner and owner.group(1) == lead and pane['id'] != lead:
+            found.append({**pane, 'plan': plan, 'turn': str(agent_turn.read_turn(pane['id']).get('state') or '')})
+        elif unowned is not None and pane['id'] != lead and (not owner or owner.group(1) not in alive):
+            unowned.append({**pane, 'plan': plan, 'turn': str(agent_turn.read_turn(pane['id']).get('state') or '')})
+    return found
+
+
+def _filter_panes(screen, panes, flags, unowned=None):
     me = screen.self_info()
+    if flags.get('--mine'):
+        panes = _mine(panes, me.get('pane_id') or '', unowned)
     resolve = lambda value, key: me[key] if value == 'self' else value  # noqa: E731
     if '--tab' in flags:
         panes = [p for p in panes if p['tab_id'] == resolve(flags['--tab'], 'tab_id')]
@@ -475,7 +544,11 @@ def _dispatch(screen, words, flags, positional, raw_rest):
     if op == 'pane current':
         return {'pane': screen.pane_current()}, 0
     if op == 'pane list':
-        return {'panes': _filter_panes(screen, screen.list_panes(), flags)}, 0
+        unowned = []
+        result = {'panes': _filter_panes(screen, screen.list_panes(), flags, unowned)}
+        if unowned:
+            result['unowned'] = unowned   # --mine 일 때만 — 담당 없는 pane(H4)
+        return result, 0
     if op == 'pane get':
         return {'pane': screen.get_pane(_need(positional, 1, 'pane')[0])}, 0
     if op == 'pane is-shell':
@@ -503,15 +576,33 @@ def _dispatch(screen, words, flags, positional, raw_rest):
     if op == 'pane send-text':
         _need(raw_rest, 2, 'pane 과 글')
         # 끝의 --enter 는 글 + Enter 전송 확인까지 한 명령으로(실패는 종료 코드로 전달).
-        # 글 자리가 '--enter' 인 경우(인자 둘)는 글이다 — 셋일 때 마지막만 플래그
-        if len(raw_rest) > 3 or (len(raw_rest) == 3 and raw_rest[2] != '--enter'):
-            raise ScreenError('usage', 'pane send-text <pane> <글> [--enter]')
-        if len(raw_rest) == 3:
-            # 데몬의 전송 확인 · 재시도와 pane run 이 같은 길을 쓴다. 글은 한 인자로 그대로.
-            screen.run(raw_rest[0], [raw_rest[1]])
-        else:
+        # 글 자리가 '--enter' 인 경우(인자 둘)는 글이다 — 셋 이상일 때 글 뒤만 플래그
+        # --wait-start(--enter 뒤에만)는 받은 에이전트가 새 차례를 시작했는지까지 기다려 한 줄로 답한다(started · idle · 선택 창)
+        tail = raw_rest[2:]
+        if tail not in ([], ['--enter'], ['--enter', '--wait-start']):
+            raise ScreenError('usage', 'pane send-text <pane> <글> [--enter [--wait-start]]')
+        if not tail:
             screen.send_text(raw_rest[0], raw_rest[1])
+            return None, 0
+        before = _turn_id(raw_rest[0]) if len(tail) == 2 else ''
+        # 데몬의 전송 확인 · 재시도와 pane run 이 같은 길을 쓴다. 글은 한 인자로 그대로.
+        busy = len(tail) == 2 and _turn_state(raw_rest[0]) == 'working'
+        try:
+            screen.run(raw_rest[0], [raw_rest[1]])
+        except ScreenError as error:
+            # 일하는 중인 pane 은 글이 대기열에 들어가 입력칸이 안 비워진다 — 데몬은 전송 확인을 못 해 timeout 을 낸다(2026-11-26 실측 · 3초).
+            # 받은 쪽은 차례 중간에 그 글을 받으니 오류가 아니라 queued 로 답한다(H5)
+            if not busy or 'timeout' not in f'{error.code} {error.stdout} {error.stderr}':
+                raise
+            return {'text': 'queued\n'}, 0
+        if len(tail) == 2:
+            return {'text': ('queued' if busy else wait_start(raw_rest[0], before)) + '\n'}, 0
         return None, 0
+    if op == 'pane wait-start':
+        # 방금 띄운 pane 이 첫 지시를 받아 차례를 시작했는지(delegate.sh) — 보내기 전 차례가 없으니 차례가 생기면 started
+        pane = _need(positional, 1, 'pane')[0]
+        seconds = int(flags['--timeout']) / 1000 if '--timeout' in flags else None
+        return {'text': wait_start(pane, '', seconds) + '\n'}, 0
     if op == 'pane send-keys':
         _need(raw_rest, 2, 'pane 과 키')
         screen.send_keys(raw_rest[0], raw_rest[1:])
@@ -550,6 +641,16 @@ def _print(result, fmt):
         return
     if fmt == 'sh':
         sys.stdout.write(''.join(f'SCREEN_{key.upper()}={shlex.quote(str(int(value)) if isinstance(value, bool) else str(value or ""))}\n' for key, value in result.items()))
+    elif fmt == 'brief':
+        # 목록을 pane 마다 한 줄로 — id · 이름표 · 상태(차례 상태가 있으면 그것 · 없으면 agent_status) · 계획서(--mine 일 때)
+        for item in next((value for value in result.values() if isinstance(value, list)), []):
+            words = [item.get('id'), item.get('label'), item.get('turn') or item.get('agent_status'), item.get('plan')]
+            sys.stdout.write(' · '.join(str(word) for word in words if word) + '\n')
+        unowned = result.get('unowned') or []
+        if unowned:
+            sys.stdout.write(f'담당 없음 {len(unowned)}개(계획서 Lead pane 이 비었거나 닫힌 pane)\n')
+            for item in unowned:
+                sys.stdout.write(' · '.join(str(word) for word in [item.get('id'), item.get('label'), item.get('turn') or item.get('agent_status'), item.get('plan')] if word) + '\n')
     elif fmt in ('id', 'ids'):
         if 'text' in result:
             sys.stdout.write(result['text'])
@@ -583,8 +684,8 @@ def main(argv):
             flags, positional = _parse(rest)
             raw_rest = positional
             fmt = flags.get('--format', 'json')
-            if fmt not in ('json', 'id', 'ids', 'sh'):
-                raise ScreenError('usage', f'--format 은 json · id · ids · sh: {fmt}')
+            if fmt not in ('json', 'id', 'ids', 'sh', 'brief'):
+                raise ScreenError('usage', f'--format 은 json · id · ids · sh · brief: {fmt}')
         screen = get_backend()
         result, code = _dispatch(screen, words, flags, positional, raw_rest)
     except ScreenError as error:

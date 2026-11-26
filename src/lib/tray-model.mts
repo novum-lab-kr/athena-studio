@@ -23,6 +23,8 @@ type ResetsAt = string | number | Date | null | undefined
 
 export type TrayAgent = { id: string; name: string; branch: string; workspace: string; status: string }
 export type UsageItem = { tool: string | undefined; toolId: string; window: string | undefined; percent: number; reset: string }
+// 현황판 pane 의 조용한 끝 알림(코어 scripts/board/server.mjs withDoneNotice)
+export type BoardDonePane = { id?: unknown; agent?: unknown; done?: { id?: unknown; summary?: unknown } | null }
 export type Notice = { kind: string; title: string; body: string; target: { pane?: string; request?: string } }
 
 // 문구는 사전(src/i18n)에서 — main 이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
@@ -232,6 +234,7 @@ export function activityView(log: ActivityLog | null, now: number): { today: num
 
 // 알림 — 사람이 고르거나 답할 것만: pane 의 입력 대기 · 새로 열린 요청(질문 · 결정).
 // 응답 끝남 · 리뷰 · 완료는 알리지 않는다(사용자 2026-10-26 — 알림이 너무 많다). 메뉴 막대 패널 · 칸반 숫자로는 그대로 보인다.
+// 예외 하나 — 조용한 끝 알림(updateDone · 2026-11-26): 아테나 pane 에 넣지 않게 된 작업 에이전트의 끝 줄은 여기서 한 줄로 알린다(아무 데도 안 가면 끝난 줄 모른다)
 // 처음 본 상태는 알리지 않고(켤 때 기준만 잡는다), 같은 변화는 한 번만, 한 번에 여러 건이면 묶는다
 // 요청 알림을 누르면 열 곳 — 허락 창 알림은 pane 도(보고 있으면 거를 때 쓴다)
 function requestTarget(request: TrayRequest): Notice['target'] {
@@ -246,6 +249,7 @@ export class Notifier {
   // 알린 pane 은 허락 창 요청이 열려 있거나 입력을 기다리는 동안 다시 알리지 않는다. 둘 다 풀리면 한 건이 끝난다
   alerted = new Set<string>()
   permissionPanes = new Set<string>() // 지금 허락 창 요청이 열린 pane
+  done: Set<string> | null = null // 본 조용한 끝 알림 id — 처음 본 목록은 알리지 않는다(켤 때 기준)
 
   private settle() {
     for (const pane of [...this.alerted]) if (!this.permissionPanes.has(pane) && this.panes.get(pane)?.status !== 'waiting') this.alerted.delete(pane)
@@ -272,6 +276,20 @@ export class Notifier {
       found.push({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: requestTarget(request) })
     }
     return found
+  }
+
+  // 조용한 끝 알림 — 현황판 /api/state panes[].done(코어 agent-done-notify.py 가 아테나 pane 에 넣지 않은 끝 줄)을 새 id 만 한 번.
+  // 처음 읽은 목록은 기준만 잡는다(켤 때 이미 끝나 있던 것). panes 가 배열이 아니면(현황판을 못 읽음) 기억 그대로
+  updateDone(panes: unknown, say: Say = koreanSay): Notice[] {
+    if (!Array.isArray(panes)) return []
+    const list: (BoardDonePane | null | undefined)[] = panes
+    const done = list.filter((pane): pane is BoardDonePane & { id: string; done: { id: string } } => Boolean(pane && typeof pane.id === 'string' && pane.done && typeof pane.done.id === 'string' && pane.done.id))
+    const known = this.done
+    this.done = new Set(done.map((pane) => pane.done.id))
+    if (known === null) return []
+    return done
+      .filter((pane) => !known.has(pane.done.id))
+      .map((pane) => ({ kind: 'done', title: say('notify.done.title'), body: say('notify.done.body', { who: String(pane.agent || pane.id), summary: String(pane.done.summary || '') }), target: { pane: pane.id } }))
   }
 
   // 반환: [{ kind: 'waiting', title, body, target: { pane } }] — 묶기(bundle)는 부르는 쪽이 거른 뒤에
