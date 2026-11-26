@@ -144,6 +144,18 @@ SUMMARY_CHARS = 480
 SECTION_MARK = re.compile(r'^(?:#{1,6}\s+.*|\d+[.)]\s+\*\*[^*]+\*\*\s*[:：—–-]?\s*(.*)|\*\*[^*]+\*\*\s*[:：]?\s*)$')
 
 
+def plain_text(text: str) -> str:
+    """강조 표시(* _ `)를 걷는다 — 코드(`…`) 안은 글자 그대로, 밖의 밑줄은 단어 가장자리 것만 지운다(my_file.py 는 남긴다)"""
+    out = []
+    for index, chunk in enumerate(re.split(r'(`+[^`]*`+)', text)):
+        if index % 2:
+            out.append(chunk.strip('`'))
+            continue
+        chunk = re.sub(r'[*`]+', '', chunk)
+        out.append(re.sub(r'(?<!\w)_+|_+(?!\w)', '', chunk))
+    return ''.join(out)
+
+
 def summary_lines(reply: str) -> list:
     """마지막 답에서 요약 줄 — 절(제목 · '1. **무엇이 달라졌나**' 같은 번호 굵은 머리)이 둘 이상이면 절마다 첫 내용 줄,
     아니면 앞의 내용 줄. 코드 블록 · 표 · 멈춤 표시 줄은 뺀다. 못 뽑으면 []"""
@@ -174,7 +186,7 @@ def summary_lines(reply: str) -> list:
     out, total = [], 0
     for text in picked[:SUMMARY_LINES]:
         text = re.sub(r'^(?:[-*+>]\s+)+', '', text)
-        text = re.sub(r'[*_`]+', '', text).strip()
+        text = plain_text(text).strip()
         if not text:
             continue
         if len(text) > SUMMARY_LINE_CHARS:

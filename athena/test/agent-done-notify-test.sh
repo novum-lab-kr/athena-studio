@@ -363,6 +363,9 @@ check "요약은 5줄 · 줄당 120자 · 전체 480자 상한" "$(last_sent | p
 before="$(sent)"
 hook stop '{"last_assistant_message":"다른 보고"}'
 check "같은 차례에 요약만 달라진 Stop 은 다시 넣지 않는다(중복 막기는 요약을 뺀 줄)" "$(sent)" "$before"
+hook prompt '{"prompt":"요약 3"}'
+hook stop '{"last_assistant_message":"## 1. 무엇이 달라졌나\n- **`my_file.py`** 의 `__init__` 과 `_private` 고침 · _강조_ 도 지움\n\n## 2. 어디서 확인하나\n- `snake_case_name`"}'
+check "요약은 강조 표시만 지우고 이름 속 밑줄은 남긴다" "$(last_sent | grep -c ' — 요약: my_file.py 의 __init__ 과 _private 고침 · 강조 도 지움 / snake_case_name$')" 1
 
 # 조용한 끝 알림(토큰 절감 C1 · C2 · 2026-11-26) — 레포 하나짜리 계획서의 형식 맞는 끝 줄은 아테나 pane 에 넣지 않고 차례 상태 파일에 done_notice 만
 mkdir -p "$BODY/pack"

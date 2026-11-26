@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 계획서 칸 자동 기록 시험 — 검증 → Validation 한 줄(중복 없음 · 자리 표시 바꾸기 · 표 뒤 · 절 없음 · 이어 보낸 pane · reuse 는 안 적음) ·
-# 커밋 → Status ready_for_review + plan.status 사건(한 번만) · delegate 사건의 글자 수 · test/_lib.sh(통과 줄 숨김 · 실패 줄 · 종료 코드 · VERBOSE). 임시 코어 사본 · 몇 초
+# 커밋 → Status ready_for_review + plan.status 사건(한 번만) · delegate 사건의 글자 수 · new-plan.mjs 가 제목 · 지시문의 $ 글자를 그대로 넣기 · test/_lib.sh(통과 줄 숨김 · 실패 줄 · 종료 코드 · VERBOSE). 임시 코어 사본 · 몇 초
 #
 # 사용: test/plan-autofill-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -137,6 +137,16 @@ done
 OUT="$(cd "$ATH" && env -u ATHENA_AGENT PATH="$TMP/dispatch-bin:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/d.md --cwd "$TMP/wt" --here 지시문 2>&1)"; RC=$?
 ROW="$(grep '"type":"delegate"' "$EVENTS" | tail -1)"
 check "delegate 사건 — 글자 수가 숫자 칸" 'printf "%s" "$ROW" | grep -Eq "\"plan\":\"plans/task/d.md\"" && printf "%s" "$ROW" | grep -Eq "\"agent\":\"web-fe\"" && printf "%s" "$ROW" | grep -Eq "\"promptChars\":[1-9][0-9]*" && printf "%s" "$ROW" | grep -Eq "\"contextChars\":[1-9][0-9]*"' "rc=$RC · $ROW · $OUT"
+
+echo; echo "scripts/new-plan.mjs — 제목 · 지시문의 \$ 글자"
+# 바꿀 값을 글자로 넘기면 $` · $' · $& · $$ 가 바꾸기 패턴으로 풀려 템플릿 앞뒤가 통째로 끼어 들었다(2026-11-11 지시 3곳이 Checkpoint 사본으로 바뀜)
+mkdir -p "$ATH/docs"; cp "$SRC/docs/plan-template-light.md" "$ATH/docs/"
+DOLLAR_TITLE='제목 $& $$ 끝'
+DOLLAR_PROMPT="grep \`\$\` 와 '^\$' · \$& · \$\$ · \$\` · \$' 끝"
+printf '%s\n' "$DOLLAR_PROMPT" > "$TMP/dollar-prompt.txt"
+OUT="$(cd "$ATH" && node scripts/new-plan.mjs --agent web-fe --summary "$DOLLAR_TITLE" --prompt-file "$TMP/dollar-prompt.txt" --no-pane-name 2>&1)"; RC=$?
+NEW="$ATH/$OUT"
+check "제목 · 지시문이 글자 그대로 · 템플릿이 끼어 들지 않음(Checkpoint 하나)" '[ $RC = 0 ] && [ -f "$NEW" ] && [ "$(head -1 "$NEW")" = "# $DOLLAR_TITLE" ] && grep -qxF "> $DOLLAR_PROMPT" "$NEW" && [ "$(grep -c "^## Checkpoint" "$NEW")" = 1 ]' "rc=$RC · $OUT · $(head -1 "$NEW" 2>/dev/null)"
 
 echo; echo "test/_lib.sh"
 mkdir -p "$TMP/quiet"; cp "$SRC/test/_lib.sh" "$TMP/quiet/_lib.sh"
