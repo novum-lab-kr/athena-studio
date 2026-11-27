@@ -119,6 +119,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hooks/lead-log-stop.py\""
+          }
+        ]
+      }
     ]
   }
 }

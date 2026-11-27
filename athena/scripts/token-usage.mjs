@@ -102,6 +102,20 @@ const textOf = (content) => {
   return content.map((block) => (block?.type === 'text' && typeof block.text === 'string' ? block.text : '')).join('\n')
 }
 
+// 답 끝 📝 줄(리드 기록 — scripts/hooks/lead-log-stop.py 가 차례 끝에 lead-log.mjs 로 적는다 · 같은 꼴). 코드 블록 안 줄은 예시라 세지 않는다
+const REPLY_LOG = /^\s*📝\s*(정정|실패|사실|결정)\s*[:：]\s*\S/
+const FENCE = /^\s*(```|~~~)/
+/** @param {string} text */
+const replyLogCount = (text) => {
+  let fenced = false
+  let count = 0
+  for (const line of text.split('\n')) {
+    if (FENCE.test(line)) fenced = !fenced
+    else if (!fenced && REPLY_LOG.test(line)) count += 1
+  }
+  return count
+}
+
 /** @param {string} command */
 const bashKind = (command) => BASH_KIND.find(([, pattern]) => pattern.test(command))?.[0] ?? 'other'
 
@@ -110,10 +124,10 @@ const emptyTotals = () => ({
   bashOnly: 0, bashOnlyWeighted: 0,
   /** @type {Record<string, { turns: number, weighted: number }>} */
   bashOnlyKinds: { leadLog: { turns: 0, weighted: 0 }, sleep: { turns: 0, weighted: 0 }, paneRead: { turns: 0, weighted: 0 } },
-  received: 0, doneNotices: 0,
+  received: 0, doneNotices: 0, replyLogs: 0,
 })
 
-/** @typedef {{ usage: any, tools: Map<string, { name: string, command: string }>, at: number }} Answer */
+/** @typedef {{ usage: any, tools: Map<string, { name: string, command: string }>, at: number, replyLogs: number }} Answer */
 /** @typedef {{ kind: 'turn', id: string } | { kind: 'notice', uuid: string, done: boolean, waking: boolean, chars: number } | { kind: 'human' } | { kind: 'compact' }} Moment */
 
 /**
@@ -186,12 +200,13 @@ const readSession = async (path, range) => {
     if (typeof id !== 'string' || !inRange(at)) continue
     let answer = answers.get(id)
     if (!answer) {
-      answer = { usage: null, tools: new Map(), at }
+      answer = { usage: null, tools: new Map(), at, replyLogs: 0 }
       answers.set(id, answer)
       timeline.push({ kind: 'turn', id })
     }
     if (entry.message.usage) answer.usage = entry.message.usage   // 같은 응답의 마지막 줄 값이 최종
     for (const block of Array.isArray(entry.message.content) ? entry.message.content : []) {
+      if (block?.type === 'text' && typeof block.text === 'string') answer.replyLogs += replyLogCount(block.text)
       if (block?.type !== 'tool_use') continue
       const command = String(block.input?.command ?? '')
       answer.tools.set(String(block.id ?? answer.tools.size), { name: String(block.name ?? ''), command })
@@ -349,6 +364,7 @@ export const measure = async ({ from, to, projectsDir, studioDir }) => {
       sum.cacheRead += Number(answer.usage.cache_read_input_tokens ?? 0)
       sum.output += Number(answer.usage.output_tokens ?? 0)
       sum.weighted += weighted
+      if (role === 'lead') sum.replyLogs += answer.replyLogs
       const tools = [...answer.tools.values()]
       if (tools.length !== 1 || tools[0]?.name !== 'Bash') continue
       sum.bashOnly += 1
@@ -413,6 +429,7 @@ export const measure = async ({ from, to, projectsDir, studioDir }) => {
       bashOnlyKinds: Object.fromEntries(Object.entries(sum.bashOnlyKinds).map(([kind, value]) => [kind, { turns: value.turns, roleShare: share(value.weighted, sum.weighted) }])),
       received: sum.received,
       doneNotices: sum.doneNotices,
+      replyLogs: sum.replyLogs,
     }]
   }))
   const savedTotal = SAVING_KINDS.reduce((acc, kind) => acc + (saved[kind]?.weighted ?? 0), 0)
@@ -458,6 +475,7 @@ const printTable = (result) => {
     }
     console.log('')
     console.log(`아테나가 받은 글 ${num(lead.received)}건 · 그중 끝 알림 ${num(lead.doneNotices)}건`)
+    console.log(`답 끝 📝 줄로 남긴 리드 기록 ${num(lead.replyLogs)}줄(lead-log 를 따로 부르지 않은 기록)`)
   }
   const { savings } = result
   /** @type {Record<string, string>} */

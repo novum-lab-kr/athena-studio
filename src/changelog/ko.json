@@ -292,5 +292,6 @@
   "Fix the pack bar hiding during a core update — shows the last pack list": "코어 업데이트 중 팩 줄이 숨던 것 수정 — 마지막 팩 목록 표시",
   "Fix lightweight plans breaking when the title or instructions contain $ — written as typed": "제목 · 지시문에 $ 가 들어가면 경량 계획서가 깨지던 것 수정 — 쓴 글자 그대로",
   "Fix PR auto review silently skipping plans with no agent — reason left in plan": "에이전트 없는 계획서의 PR 을 자동 리뷰가 말없이 건너뛰던 것 수정 — 계획서에 이유 남김",
+  "Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix": "머지 앞 검증이 실패하면 자동 리뷰가 사용자에게 묻던 것 수정 — 실패 원문을 에이전트에 보내 고치게 함",
   "Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only": "브랜치를 squash 머지한 뒤 개발 앱 코어 업데이트가 멈추던 것 수정 — 머지된 커밋만 번들에 담음"
 }
