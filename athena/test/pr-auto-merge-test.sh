@@ -184,23 +184,34 @@ env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" "$(com
 {
 merge_case "autoMergeConfirm: false 라도 머지 직전에 새 커밋 → 머지 안 함" ', "autoMergeConfirm": false' no '바로 머지' FAKE_GH_HEAD_AFTER=1
 merge_case "autoMergeConfirm: false 라도 검증 실패 → 머지 안 함" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
-grep -q '"title": "자동 리뷰 승인 · 검증 못 함' "$CORE/.requests"/*.json 2>/dev/null && echo "  ✔ 아테나 pane 이 없으면 검증 못 함도 지금처럼 요청으로 남긴다" || { echo "  ✖ 아테나 pane 이 없는데 요청이 없다"; FAIL=1; }
+grep -q '"title": "자동 리뷰 승인 · 검증 실패' "$CORE/.requests"/*.json 2>/dev/null && grep -q '무엇이 실패: .*실패 단계 npm test.*AssertionError: 3 !== 4.*사용자가 할 일: 없음' "$CORE/.requests"/*.json \
+  && echo "  ✔ 작업 pane · 아테나 pane 이 모두 없을 때만 요청으로 남긴다 — 무엇이 실패(단계 · 원문 끝) · 사용자가 할 일 없음" || { echo "  ✖ pane 이 없는데 요청이 없거나 실패 원문이 없다"; cat "$CORE/.requests"/*.json 2>/dev/null; FAIL=1; }
 } > "$GRP"; grp_end "확인 없음이라도 머지 직전 새 커밋 · 검증 실패면 머지 안 함(아테나 pane 없으면 요청)"
 
 # 고를 것 없는 상태 알림은 요청으로 열지 않고 아테나 pane 에(2026-10-28 사용자) — 요청은 머지 확인 · 결정 콘솔만
 SLOG="$TMP/screen.log"
-ATHENA_PANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🧭 아테나\"},{\"id\":\"p3\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🤖 web-fe · feat/x\"}"
+ATHENA_ONLY="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🧭 아테나\"}"
+ATHENA_PANE="$ATHENA_ONLY,{\"id\":\"p3\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🤖 web-fe · feat/x\"}"
+# 검증 실패는 사람에게 묻지 않고 그 PR 을 만든 작업 pane(Work ref pane p3)에 실패 원문과 함께 고칠 지시(2026-11-27 · 수정 지시와 같은 길)
 {
 : > "$SLOG"
-merge_case "검증 못 함 + 아테나 pane 있음 → 요청 없이 아테나 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
-[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함 — web#7 — .* --enter$" "$SLOG" && ! grep -q "send-keys" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
-  && echo "  ✔ 요청 없음 · 살아 있는 아테나 pane(p50)에 한 줄 · 작업 pane(🤖)에는 안 보냄" || { echo "  ✖ 아테나 pane 알림"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG"; FAIL=1; }
+merge_case "검증 실패 + 작업 pane(p3) 있음 → 줄에 실패 단계 · 원문 끝" ', "autoMergeConfirm": false' no '검증 대기 — 검증 실패\(종료 1\) — 실패 단계 npm test · 원문 끝: .*AssertionError: 3 !== 4 · ' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
+[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p3 \[자동 리뷰 → web-fe\] PR web#7 @[0-9a-f]* — 리뷰는 승인(1/1)인데 같은 HEAD 검증이 실패해 머지하지 않았다.* 실패 단계: npm test\. 실패 원문 끝(.*): <<<.*not ok 2 - 합계 ⏎ AssertionError: 3 !== 4>>>\..*commit\.sh --plan .*ship\.sh --plan .* --auto-push .* --enter$" "$SLOG" \
+  && ! grep -q "send-text p50 " "$SLOG" && ! grep -q "send-keys" "$SLOG" \
+  && echo "  ✔ 요청 없음 · 아테나에도 안 보냄 · 작업 pane(p3)에 실패 단계 · 원문 끝 · commit.sh → ship.sh --auto-push 지시" || { echo "  ✖ 작업 pane 으로 실패 원문"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
+} > "$GRP"; grp_end "검증 실패 — 작업 pane 에 실패 원문과 함께 고칠 지시(사람 · 아테나에 묻지 않음)"
+# 고를 것 없는 상태 알림 — 작업 pane 이 없으면 아테나 pane 에 한 줄(요청 없음)
+{
+: > "$SLOG"
+merge_case "검증 실패 + 작업 pane 없음 · 아테나 pane 있음 → 요청 없이 아테나 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_ONLY" FAKE_SCREEN_LOG="$SLOG"
+[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 실패 — web#7 — 무엇이 실패: .*실패 단계 npm test.*AssertionError: 3 !== 4.*누가 고치나: 작업 pane 을 찾지 못해 아테나가 이어받는다.*사용자가 할 일: 없음.* --enter$" "$SLOG" && ! grep -q "send-keys" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
+  && echo "  ✔ 요청 없음 · 살아 있는 아테나 pane(p50)에 한 줄(무엇이 실패 · 누가 고치나 · 사용자가 할 일 없음)" || { echo "  ✖ 아테나 pane 알림"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG"; FAIL=1; }
 # 다시 돌린 결과는 다시 알린다(결정 R1) — 계획서 줄을 지우고 다시 돌리면 그 PR 의 .notified 기록을 지우고 같은 HEAD · 제목도 다시 보낸다
 : > "$SLOG"
 sed -i.bak '/^- Auto review:/d' "$CORE/plans/task/x.md" && rm -f "$CORE/plans/task/x.md.bak"
-env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" \
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_ONLY" FAKE_SCREEN_LOG="$SLOG" \
   "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
-grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함" "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "이미 알렸다" "$TMP/merge.out" \
+grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 실패" "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "이미 알렸다" "$TMP/merge.out" \
   && echo "  ✔ 줄을 지워 다시 돌리면 기록을 지우고 같은 HEAD · 제목도 다시 알림(R1 · 요청은 안 엶)" || { echo "  ✖ 다시 돌린 결과를 다시 알리지 않았다"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
 } > "$GRP"; grp_end "상태 알림 — 아테나 pane 에 한 줄(요청 없음) · 다시 돌리면 다시 알림"
 # 아테나 pane 에 질문 · 고르기 창이 떠 있으면 넣지 않고 미룬다(#100 — 글이 창에 먹히고 Enter 가 1번을 고른다) · 처리기가 창이 닫히면 넣는다
@@ -209,16 +220,16 @@ grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리�
 MENU='  ❯ 1. 예
     2. 아니오
   Enter to select · ↑/↓ to navigate · Esc to cancel'
-WATCHER_HELD=1 merge_case "검증 못 함 + 아테나 pane 에 질문 창 → 미룸" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$MENU"
+WATCHER_HELD=1 merge_case "검증 실패 + 아테나 pane 에 질문 창 → 미룸" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_ONLY" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$MENU"
 [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "send-text\|send-keys" "$SLOG" && [ "$(ls "$TMP/queue-confirm/notices" 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && grep -q "pr-auto:web#7" "$TMP/queue-confirm/.notified" \
   && echo "  ✔ 질문 창이 떠 있으면 글 · Enter 를 넣지 않고 미룬 대기열(notices/)에 · 중복 방지는 받은 뒤에 기록" || { echo "  ✖ 질문 창 미루기"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
-flush_notices() { (cd "$CORE" && env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$1" \
+flush_notices() { (cd "$CORE" && env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_PANES="$ATHENA_ONLY" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$1" \
   "$(command -v node)" --input-type=module -e "await (await import('./scripts/pr-auto.mjs')).flushNotices()" > "$TMP/flush.out" 2>&1); }
 : > "$SLOG"; flush_notices "$MENU"
 ! grep -q "send-text" "$SLOG" && [ -n "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] \
   && echo "  ✔ 창이 아직 떠 있으면 처리기도 넣지 않고 기다린다" || { echo "  ✖ 창이 떠 있는데 넣었다"; sed 's/^/      /' "$SLOG"; FAIL=1; }
 : > "$SLOG"; flush_notices "> "
-grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함.* --enter$" "$SLOG" && ! grep -q "send-keys" "$SLOG" && [ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
+grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 실패.* --enter$" "$SLOG" && ! grep -q "send-keys" "$SLOG" && [ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
   && echo "  ✔ 창이 닫히면 처리기가 미룬 알림을 넣고 대기열에서 지운다" || { echo "  ✖ 미룬 알림 넣기"; sed 's/^/      /' "$SLOG" "$TMP/flush.out"; FAIL=1; }
 # 공통 전송 경로의 실패 갈래 — 데몬이 쓰기 전에 거절하면(질문 창 · 다른 전송 중) 미룬 알림을 남겨 두고, 전송을 확인 못 하면 다시 넣지 않고 요청으로
 mkdir -p "$TMP/queue-confirm/notices"
@@ -290,7 +301,7 @@ grep -q "처리기를 뒤에서 시작" "$TMP/kick.out" && [ -f "$KQW/.watcher.l
 {
 : > "$SLOG"
 EXTRA_PLAN="- Lead pane: p91
-" merge_case "Lead pane(p91)이 살아 있으면 그 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="{\"id\":\"p91\"},$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
+" merge_case "Lead pane(p91)이 살아 있으면 그 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="{\"id\":\"p91\"},$ATHENA_ONLY" FAKE_SCREEN_LOG="$SLOG"
 grep -q "^screen pane send-text p91 \[자동 리뷰 → 아테나\]" "$SLOG" && ! grep -q "send-text p50 " "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
   && echo "  ✔ Lead pane 에 보냄(다른 아테나 pane 이 아니라)" || { echo "  ✖ Lead pane 알림"; sed 's/^/      /' "$SLOG"; FAIL=1; }
 # 머지 확인(고를 것 있음)은 아테나 pane 이 있어도 지금처럼 요청

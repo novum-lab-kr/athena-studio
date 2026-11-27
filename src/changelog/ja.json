@@ -291,5 +291,6 @@
   "Fix PR auto review stopping after 2 reviews — up to 3 reviews for every PR": "PR 自動レビューが 2 回で止まっていたのを修正 — すべての PR で最大 3 回",
   "Fix the pack bar hiding during a core update — shows the last pack list": "コアの更新中にパックバーが隠れていたのを修正 — 最後のパック一覧を表示",
   "Fix lightweight plans breaking when the title or instructions contain $ — written as typed": "タイトル・指示に $ が含まれると軽量計画書が壊れていたのを修正 — 入力どおりに記録",
-  "Fix PR auto review silently skipping plans with no agent — reason left in plan": "エージェントのない計画書の PR を自動レビューが黙ってスキップしていたのを修正 — 計画書に理由を記録"
+  "Fix PR auto review silently skipping plans with no agent — reason left in plan": "エージェントのない計画書の PR を自動レビューが黙ってスキップしていたのを修正 — 計画書に理由を記録",
+  "Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix": "マージ前の検証が失敗すると自動レビューがユーザーに確認していたのを修正 — 失敗の原文をエージェントに送って修正"
 }

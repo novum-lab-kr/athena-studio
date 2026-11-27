@@ -58,7 +58,7 @@ import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFi
 import {
   BASE_MERGED, FAST_LAST, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, singleRepoSkipReason, withAutoSkipLine, skipsMergeConfirm,
-  validReview, withAutoLine, withDecisionLines, workRefOf,
+  validReview, withAutoLine, withDecisionLines, workRefOf, verifyFailNotice, verifyFailureOf, verifyTailNote,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
   DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planRiskFlags, planWideMark, planWideOff, wideChangeVerdict,
 } from './lib/pr-auto.mjs'
@@ -451,7 +451,7 @@ const ask = (planFile, { key, title, body, options = [] }) => {
   }
 }
 
-// 고를 것이 없는 상태 알림(상한 멈춤 · 일부만 승인 · 합의 못 냄 · 수정 지시 보낼 pane 없음 · 검증 못 함 · 머지 못 함) —
+// 고를 것이 없는 상태 알림(상한 멈춤 · 일부만 승인 · 합의 못 냄 · 수정 지시 · 검증 실패 원문을 보낼 pane 없음 · 검증 못 함 · 머지 못 함) —
 // 요청(작업 알림 · [작업] 팝업 · 확인 필요)으로 열지 않고 아테나 pane 에 한 줄로 보낸다. 아테나가 이어받는다(사람에게 되묻지 않는다 · 2026-10-28 사용자).
 // 요청은 사람이 고를 것이 있는 것만 — 머지 확인(머지/보류) · 결정 필요(결정 콘솔).
 // 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 현황판 readPanes 와 같은 기준).
@@ -834,10 +834,26 @@ const runVerify = (repo, worktree) => new Promise((done) => {
   const startedAt = Date.now()
   verifyStats.runs += 1
   // 따로 프로세스 묶음으로 띄운다 — 멈출 때(stopVerifies) 검증 스크립트가 띄운 자식까지 그 묶음째 끈다(이 처리가 띄운 pid 만)
-  const child = spawn(join(ROOT, 'scripts/verify/reuse.sh'), [repo], { cwd: ROOT, detached: true, stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env, ATHENA_VERIFY_DIR: worktree, ATHENA_VERIFY_STRICT: '1', ATHENA_VERIFY_ALLOW_SKIP: '' } })
+  // 출력은 임시 파일로 받는다(관 대신 — 검증이 띄운 자식이 관을 쥐고 남아도 끝을 기다리지 않는다) · 실패면 실패 단계 · 원문 끝을 읽어 싣는다(lib verifyFailureOf)
+  const logDir = mkdtempSync(join(tmpdir(), 'athena-pr-auto-verify-'))
+  const logFile = join(logDir, 'verify.log')
+  const logFd = openSync(logFile, 'w')
+  const child = spawn(join(ROOT, 'scripts/verify/reuse.sh'), [repo], { cwd: ROOT, detached: true, stdio: ['ignore', logFd, logFd], env: { ...process.env, ATHENA_VERIFY_DIR: worktree, ATHENA_VERIFY_STRICT: '1', ATHENA_VERIFY_ALLOW_SKIP: '' } })
+  closeSync(logFd)
   verifyChildren.add(child)
   const timer = setTimeout(() => stopChild(child), 60 * 60 * 1000)
-  const finish = (status) => { clearTimeout(timer); verifyChildren.delete(child); verifyStats.ms += Date.now() - startedAt; done(status === 0 ? { ok: true, why: '' } : { ok: false, why: `검증 실패(종료 ${status})` }) }
+  const failureOf = (status) => {
+    let output = ''
+    try { output = readFileSync(logFile, 'utf8').slice(-256 * 1024) } catch { output = '' }
+    const failure = verifyFailureOf(output)
+    return { ok: false, why: `검증 실패(종료 ${status})${failure.steps.length ? ` — 실패 단계 ${failure.steps.join(', ')}` : ''}`, failure }
+  }
+  const finish = (status) => {
+    clearTimeout(timer); verifyChildren.delete(child); verifyStats.ms += Date.now() - startedAt
+    const result = status === 0 ? { ok: true, why: '' } : failureOf(status)
+    rmSync(logDir, { recursive: true, force: true })
+    done(result)
+  }
   child.on('error', () => finish(null))
   child.on('close', (code) => finish(code))
 })
@@ -871,6 +887,19 @@ const mergeGate = (worktree, title) => {
 const readyToMerge = async (repo, worktree, sha, title) => {
   const verify = await verifiedAt(repo, worktree, sha)
   return verify.ok ? mergeGate(worktree, title) : verify
+}
+
+// 머지 앞 검증이 실패했다 — 사람에게 묻지 않고 그 PR 을 만든 작업 pane 에 실패 원문과 함께 고칠 지시(수정 지시와 같은 길 · 2026-11-27 사용자).
+// 작업 pane = Work ref 의 pane(살아 있으면) · 없으면 그 계획서 대화를 다시 연다(agentPane). 못 보냈을 때만 아테나에 — 무엇이 실패 · 누가 고치나 · 사용자가 할 일을 쉬운 말로
+const sendVerifyFailure = async ({ planFile, repo, number, sha, stage, brief, why, failure, ref }) => {
+  const pane = await agentPane({ planFile, ref })
+  const instruction = masked(verifyFailNotice({ agent: ref.agent || '작업 에이전트', repo, number, sha, brief, why, steps: failure.steps, tail: failure.tail, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))
+  const sent = pane && (await sendToPane(pane, instruction))
+  if (sent) return console.log(`  → 검증 실패 — 실패 원문과 함께 고치라고 작업 pane ${pane} 에 보냈다(사람에게 묻지 않는다)`)
+  console.log(`  ⚠️ 검증 실패 — 작업 pane ${pane ? `${pane} 에 넣지 못해` : '이 없어'} 아테나에 알린다`)
+  const steps = failure.steps.length ? failure.steps.join(', ') : '표 없음'
+  const tail = failure.tail.slice(-5).join(' ⏎ ') || '(출력 없음)'
+  await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${stage} · 검증 실패 — ${repo}#${number}`, body: `무엇이 실패: ${brief}인데 같은 HEAD 검증이 실패했다(${why} · 실패 단계 ${steps}) — 원문 끝: ${tail}. 누가 고치나: 작업 pane ${pane ? `${pane} 에 지시를 넣지 못해` : '을 찾지 못해'} 아테나가 이어받는다 — 작업 에이전트를 열어 아래 지시를 전한다. 사용자가 할 일: 없음. 머지하지 않았다.\n${instruction}` })
 }
 
 // GitHub 는 push 직후 한동안 mergeable 이 UNKNOWN(계산 중)이라 몇 번 다시 묻는다
@@ -927,9 +956,16 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
   const verify = await readyToMerge(repo, ref.worktree, sha, pr.title)
   if (!verify.ok) {
     // 검증을 못 했으면 머지 확인을 묻지 않는다 — 같은 HEAD 는 다시 감지되지 않으니(계획서 줄) 새 커밋이 오거나 사람이 그 줄을 지워야 다시 본다
-    writeAutoLine(planPath, { ...line, result: `검증 대기 — ${verify.why}` })
+    const failure = verify.failure ?? null
+    const tailNote = failure ? verifyTailNote(failure.tail) : ''
+    writeAutoLine(planPath, { ...line, result: masked(`검증 대기 — ${verify.why}${tailNote ? ` · ${tailNote}` : ''}`) })
     logEvent(ROOT, 'auto.stop', { ...stopBase, reason: 'verify', why: verify.why })
-    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${stage} · 검증 못 함 — ${repo}#${number}`, body: `${brief}인데 같은 HEAD 검증을 못 했다: ${verify.why}. 머지하지 않았다. ${RETRY_HINT}` })
+    if (failure) {
+      await sendVerifyFailure({ planFile, repo, number, sha, stage, brief, why: verify.why, failure, ref })
+      return
+    }
+    // 검증을 시작도 못 했다(워크트리 HEAD 가 다름 · 미커밋 등) — 고칠 원문이 없어 아테나가 이어받는다
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${stage} · 검증 못 함 — ${repo}#${number}`, body: `무엇이 문제: ${brief}인데 같은 HEAD 검증을 시작하지 못했다(${verify.why}). 누가 고치나: 아테나가 이어받는다. 사용자가 할 일: 없음. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
   pr.mergeable = await settledMergeable(org, repo, number, pr.mergeable)
