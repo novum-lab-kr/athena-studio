@@ -69,7 +69,7 @@ find /var/log -newermt 2026-11-01
 sh -c 'ls /srv'
 bash -lc 'cd /srv/app && git pull'
 echo $(date)
-cat `which ls`
+ls -l `which ls`
 echo "$HOME"
 FOO=1 ./deploy.sh
 ls /srv/*
@@ -223,6 +223,15 @@ ls -la ~/.ssh
 stat /root/.ssh
 f=/srv/app/log; cat $f
 docker exec web ls /app
+echo "$(date)"
+LIST
+echo "② 확인 — 읽는 명령의 경로를 치환으로 정하면 판정 못 함 → 확인(2026-11-27 PR #382 리뷰)"
+while IFS= read -r line; do allow deny "$line"; done <<'LIST'
+cat "$(printf %s .en; printf v)"
+cat $(printf .env)
+cat `printf .env`
+head -5 "$(ls /srv/app/.e*)"
+base64 "$(echo x)"
 LIST
 allow deny "$(printf 'ls\nreboot')"
 

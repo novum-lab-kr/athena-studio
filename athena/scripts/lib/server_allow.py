@@ -83,6 +83,9 @@ WRAPPERS = {
 WRAPPER_FIRST = {'timeout': 1, 'chroot': 1, 'flock': 1, 'chrt': 1, 'taskset': 1}
 # .ssh 폴더 아래 이름을 줘도 바로인 명령 — 목록 · 정보 보기만(cat · tar · cp 로 키를 읽는 것은 묻는다)
 SSH_LISTERS = {'ls', 'stat', 'du', 'find', 'file', 'test', '[', 'namei', 'realpath', 'readlink', 'tree', 'mkdir', 'chmod', 'chown', 'ssh-keygen'}
+# 파일 내용을 읽어 보이는 명령 — 경로가 치환($( ) · 백틱)으로 정해지면 비밀 파일인지 알 수 없으니 묻는다(2026-11-27 PR #382 리뷰)
+READERS = set('cat tac nl less more head tail grep egrep fgrep zgrep rg sed awk gawk cut sort uniq paste jq yq base64 base32 xxd od hexdump '
+              'strings diff cmp comm tr fold column iconv zcat bzcat xzcat gzip bzip2 xz zstd tar zip cpio cp scp rsync dd source'.split())
 SHELLS = {'sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'csh', 'tcsh', 'su', 'runuser'}
 
 
@@ -489,6 +492,8 @@ def check_words(words, cwds, depth, names):
         target = plain_args(args)[:1]
         cwds.add(target[0] if target and target[0] != '-' else '?')
         return None
+    if name in READERS and any(arg == '$' or '$(' in arg or '`' in arg for arg in args):
+        return f'비밀 파일일 수 있음({name} 의 경로를 치환으로 정한다 — 판정 못 함)'
     # 비밀 파일 이름 — grep 의 -e <패턴> 자리 · 메타데이터 주소 · URL 은 파일이 아니다
     patterns = grep_patterns(name, args)
     for position, arg in enumerate(args):
