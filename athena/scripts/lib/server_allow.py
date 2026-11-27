@@ -59,8 +59,8 @@ DEPTH_MAX = 6
 
 POWER = {'reboot', 'shutdown', 'poweroff', 'halt', 'init', 'telinit', 'kexec'}
 SYSTEMCTL_POWER = {'reboot', 'poweroff', 'halt', 'kexec', 'soft-reboot', 'suspend', 'hibernate', 'hybrid-sleep', 'suspend-then-hibernate', 'rescue', 'emergency'}
-# systemctl start · isolate 로 켜면 재부팅 · 전원 끄기가 되는 대상(isolate 는 확장자 없이 줘도 .target 이다) — 2026-11-28 PR #382 리뷰
-POWER_UNIT = re.compile(r'^(reboot|poweroff|halt|kexec|soft-reboot|ctrl-alt-del|runlevel[06])(\.target)?$')
+# systemctl start · isolate 로 켜면 재부팅 · 전원 끄기가 되는 대상(isolate 는 확장자 없이 줘도 .target 이다) · 그 대상이 부르는 systemd-*.service — 2026-11-28 PR #382 · #384 리뷰
+POWER_UNIT = re.compile(r'^((reboot|poweroff|halt|kexec|soft-reboot|ctrl-alt-del|runlevel[06])(\.target)?|systemd-(reboot|poweroff|halt|kexec|soft-reboot)(\.service)?)$')
 # 대상 이름을 줘도 켜지 않는 systemctl 동사 — 보기만
 SYSTEMCTL_READ = {'status', 'show', 'cat', 'help', 'list-dependencies', 'is-active', 'is-enabled', 'is-failed', 'list-units', 'list-unit-files'}
 DISK = {'dd', 'umount', 'wipefs', 'gdisk', 'cfdisk', 'mkswap', 'swapoff', 'losetup'}
@@ -86,7 +86,7 @@ WRAPPERS = {
 # 값을 다음 낱말로 받는 긴 옵션(--unit x) — 그 감싸기만
 WRAPPER_LONG = {'systemd-run': {'--unit', '--property', '--setenv', '--description', '--slice', '--uid', '--gid', '--nice', '--working-directory',
                                 '--machine', '--host', '--service-type', '--on-active', '--on-boot', '--on-startup', '--on-unit-active',
-                                '--on-unit-inactive', '--on-calendar', '--timer-property', '--path-property', '--socket-property', '--send-sighup'}}
+                                '--on-unit-inactive', '--on-calendar', '--timer-property', '--path-property', '--socket-property'}}
 # 첫 이름 인자를 하나 더 건너뛰는 감싸기(timeout <시간> · chroot <폴더> · flock <파일> · chrt <우선순위> · taskset <마스크>)
 WRAPPER_FIRST = {'timeout': 1, 'chroot': 1, 'flock': 1, 'chrt': 1, 'taskset': 1}
 # .ssh 폴더 아래 이름을 줘도 바로인 명령 — 목록 · 정보 보기만(cat · tar · cp 로 키를 읽는 것은 묻는다)

@@ -242,8 +242,14 @@ systemctl isolate runlevel0.target
 systemctl isolate reboot
 systemctl start halt.target
 systemctl set-default runlevel0.target
+systemctl start systemd-reboot.service
+systemctl restart systemd-poweroff.service
+systemctl start systemd-halt.service
+systemctl start systemd-kexec.service
+systemctl isolate systemd-reboot
 systemd-run reboot
 systemd-run --unit x --on-active=30 reboot
+systemd-run --send-sighup reboot
 systemd-run -u x -p A=1 shutdown -h now
 sudo systemd-run --scope systemctl isolate reboot.target
 command reboot
@@ -263,6 +269,7 @@ while IFS= read -r line; do allow allow "$line"; done <<'LIST'
 systemctl status reboot.target
 systemctl list-dependencies poweroff.target
 systemctl start rebooter.service
+systemctl status systemd-reboot.service
 systemd-run --unit x ls
 command -v reboot
 command -V shutdown
