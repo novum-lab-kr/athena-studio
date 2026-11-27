@@ -250,6 +250,9 @@ systemctl isolate systemd-reboot
 systemd-run reboot
 systemd-run --unit x --on-active=30 reboot
 systemd-run --send-sighup reboot
+systemd-run -ucleanup reboot
+sudo -uroot reboot
+sudo -nu root reboot
 systemd-run -u x -p A=1 shutdown -h now
 sudo systemd-run --scope systemctl isolate reboot.target
 command reboot
@@ -271,6 +274,7 @@ systemctl list-dependencies poweroff.target
 systemctl start rebooter.service
 systemctl status systemd-reboot.service
 systemd-run --unit x ls
+systemd-run -ucleanup ls
 command -v reboot
 command -V shutdown
 command -pv reboot

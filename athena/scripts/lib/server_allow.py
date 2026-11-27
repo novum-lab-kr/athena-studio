@@ -357,7 +357,7 @@ def unwrap(words):
                 rest = rest[1:]
                 if option == '--':
                     break
-                if not option.startswith('--') and option[-1] in values and rest:
+                if not option.startswith('--') and takes_next(option, values) and rest:
                     rest = rest[1:]
                 elif option in WRAPPER_LONG.get(name, ()) and rest:
                     rest = rest[1:]
@@ -368,6 +368,14 @@ def unwrap(words):
             continue
         return name, words[1:], inner
     return '', [], inner
+
+
+def takes_next(option, values):
+    """짧은 옵션 묶음이 다음 낱말을 값으로 받나 — getopt 처럼 값 받는 글자가 처음 나온 뒤 글자가 값이다(-ucleanup · -uroot 는 붙은 값)"""
+    for position, letter in enumerate(option[1:], 1):
+        if letter in values:
+            return position == len(option) - 1
+    return False
 
 
 def command_lookup(args):
