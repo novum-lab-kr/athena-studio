@@ -616,8 +616,11 @@ const autoReviewPlans = async (plans) => {
       const [repoName, number] = link.split('#')
       if (!repos.has(repoName)) continue
       const info = await prInfo(repoName, number)
-      if (info.state !== 'OPEN' || !/^[0-9a-f]{40}$/.test(info.head) || !needsReview(text, repoName, number, info.head)) continue
+      if (info.state !== 'OPEN' || !/^[0-9a-f]{40}$/.test(info.head)) continue
       const key = `${plan.id}@${link}@${info.head}`
+      // 처리가 끝난 HEAD(계획서 줄이 있음)는 메모리에서도 잊는다 — 사람이 그 줄을 지워 다시 돌리면 같은 HEAD 를 다시 넣게
+      // (2026-11-27 syung#183 — 기억이 남아 줄을 지워도 2시간 넣지 않았다 · test/board-auto-review-requeue-test.sh)
+      if (!needsReview(text, repoName, number, info.head)) { autoReviewQueued.delete(key); continue }
       if (autoReviewQueued.has(key)) continue
       // PR 을 조회하는 사이 Status 가 바뀌었을 수 있다(사람이 blocked 로 옮김 등) — 잠금 안에서 지금 Status 로 다시 판정하고,
       // 완료 · 계획이면 그 자리에서 ready_for_review 로 되돌린다. skip 이면 상태도 대기열도 건드리지 않는다(lib/pr-auto.mjs claimAutoReview)

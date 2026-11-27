@@ -19,6 +19,8 @@ g() { git -C "$@" >/dev/null 2>&1; }
 git init -q --bare -b main "$TMP/origin.git"
 git clone -q "$TMP/origin.git" "$TMP/main" 2>/dev/null
 printf 'a\n' > "$TMP/main/a.txt"; printf 'b\n' > "$TMP/main/b.txt"
+# 링크도 무시되게 끝 슬래시 없이 — `node_modules/` 면 링크는 추적 안 된 파일이라 정리가 '커밋하지 않은 변경' 으로 남긴다(그것도 안전)
+printf 'node_modules\n' > "$TMP/main/.gitignore"
 g "$TMP/main" add . && g "$TMP/main" commit -qm init && g "$TMP/main" push -q origin main
 
 # 워크트리 하나 — origin/main 에서 브랜치를 따 파일 하나를 바꿔 커밋
@@ -55,6 +57,10 @@ g "$TMP/main" worktree add -q -b feat/outside "$TMP/outside" origin/main
 # ⑪ 이슈 워크트리 판정(옛 그대로 — 반영 · pane 을 보지 않음): 깨끗 + push 됨 → 지움 · 안 올린 커밋 → 남김(push 이유)
 wt issueok k.txt k1; g "$TMP/worktrees/issueok" push -q origin feat/issueok
 wt issuelocal l.txt l1
+# ⑫ 머지됨 · node_modules 가 메인 체크아웃 node_modules 를 가리키는 링크(아테나가 손으로 걸어 둔 사례) — 워크트리를 지워도 링크 너머(메인 쪽)는 그대로여야 한다
+#    (2026-11-27 syung 메인 node_modules 가 비워진 일의 의심 경로 — 정리는 링크를 따라가지 않음을 확인 · 실제 원인은 확인 못 함)
+mkdir -p "$TMP/main/node_modules/pkg"; printf 'x\n' > "$TMP/main/node_modules/pkg/index.js"
+wt linked m.txt m1; squash linked; ln -s "$TMP/main/node_modules" "$TMP/worktrees/linked/node_modules"
 
 node --input-type=module - "$SRC/scripts/board/worktree-cleanup.mjs" "$TMP" <<'EOF'
 const [modPath, tmp] = process.argv.slice(2)
@@ -109,6 +115,8 @@ result = await cleanupWorktree({ path: W('issueok') })
 check('이슈 워크트리 — 깨끗 · push 됨 → 지움(반영 · pane 은 보지 않음 · 옛 판정)', result.state === 'removed' && !existsSync(W('issueok')), show(result))
 result = await cleanupWorktree({ path: W('issuelocal') })
 check('이슈 워크트리 — 안 올린 커밋 → 남김(push 이유)', result.state === 'kept' && result.reason.startsWith('push 하지 않은 커밋이 1개'), show(result))
+result = await plan('linked')
+check('node_modules 가 메인 쪽 링크 → 워크트리 지움 · 링크 너머(메인 node_modules)는 그대로', result.state === 'removed' && !existsSync(W('linked')) && existsSync(`${tmp}/main/node_modules/pkg/index.js`), `${show(result)} · 메인 쪽: ${existsSync(`${tmp}/main/node_modules`) ? readdirSync(`${tmp}/main/node_modules`).join(',') : '없음'}`)
 check('지운 뒤 worktree prune — 목록에 지운 폴더가 없음', !listed().includes(W('ffmerged')) && !listed().includes(W('issueok')))
 check('워크트리 자리에 지운 것만 빠짐', JSON.stringify(readdirSync(`${tmp}/worktrees`).sort()) === JSON.stringify(['busy', 'direct', 'dirty', 'extra', 'issuelocal', 'notmerged', 'untracked']), readdirSync(`${tmp}/worktrees`).join(','))
 

@@ -388,6 +388,7 @@ R="$(A pack set-auto-merge acme-web --auto direct)"
 check "--auto direct → autoMerge true · autoPr false(불리언) · 결과 autoPr false" '[ "$(echo "$R" | field autoPr)" = False ] && [ "$(python3 -c "import json; r=[x for x in json.load(open(\"pack/pack.json\"))[\"repos\"] if x[\"name\"]==\"acme-web\"][0]; print(r[\"autoMerge\"] is True, r[\"autoPr\"] is False)")" = "True True" ]' "$R"
 R="$(A pack set-auto-merge acme-web --auto on)"
 check "--auto on → autoPr 키를 지운다(PR 켬)" '[ "$(echo "$R" | field autoPr)" = True ] && [ "$(python3 -c "import json; r=[x for x in json.load(open(\"pack/pack.json\"))[\"repos\"] if x[\"name\"]==\"acme-web\"][0]; print(r[\"autoMerge\"] is True, \"autoPr\" in r)")" = "True False" ]' "$R"
+check "--auto on → 바뀐 키 사건(pack.auto-merge-set · autoPr false → null) — 누가 바꿨는지 남는다" 'python3 -c "import json,sys; ev=[json.loads(l) for f in sys.argv[1:] for l in open(f) if l.strip()]; ev=[e for e in ev if e.get(\"type\")==\"pack.auto-merge-set\" and e.get(\"repo\")==\"acme-web\"]; sys.exit(0 if ev and ev[-1][\"changed\"].get(\"autoPr\")=={\"from\": False, \"to\": None} and \"autoMerge\" not in ev[-1][\"changed\"] else 1)" $(find "$ATHENA_DATA_DIR" -name events.jsonl)'
 A pack set-auto-merge acme-web --auto direct >/dev/null
 A pack set-auto-merge acme-web --auto off >/dev/null
 check "direct 다음 off → autoMerge · autoPr 모두 지움 · 파일이 처음과 글자까지 같다" 'cmp -s pack/pack.json "$WORK/pack.merge.bak"'
