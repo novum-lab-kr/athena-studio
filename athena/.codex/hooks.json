@@ -116,6 +116,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/lead-log-stop.py\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

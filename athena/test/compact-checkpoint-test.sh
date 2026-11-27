@@ -5,7 +5,8 @@
 #   ② warn: 대화 기록 마지막 응답의 문맥이 실제 압축 기준(압축 창 − 33,000)의 70% 를 넘으면 모델에게만 한 번 넣는다(사용자 화면 줄 없음) · 압축 직후(post) 다시 알릴 수 있게 된다
 #      세션 첫 도구 뒤 첫 응답이 기록에 늦게 쓰여도 잠깐 기다려 알린다(2026-11-07 실측)
 #   ③ scripts/transcript-search.mjs: 대화 원문에서 낱말이 든 대목만 짧게 · 비밀값 가림 · 압축 뒤 안내에 원문 자리
-#   ④ scripts/lead-log.mjs: 리드 기록 덧붙이기(가림) · 압축 뒤 아테나 안내 맨 앞에 최근 줄 · 곧 압축 알림이 가리킨다
+#   ④ scripts/lead-log.mjs: 리드 기록 덧붙이기(가림) · 압축 뒤 아테나 안내 맨 앞에 최근 줄 · 곧 압축 알림이 답 끝 📝 줄을 가리킨다 ·
+#      scripts/hooks/lead-log-stop.py: 답 끝 📝 줄을 lead-log.mjs 로 적기(창 표시 · 가림 · 코드 블록 빼기 · 두 번 안 적기 · 위임 에이전트 빼기 · 기록 끝 읽기)
 #   ⑤ Codex(--tool=codex): rollout 의 token_count · 압축 기준(codex-cli 0.166.0 소스 셈 — 설정 · 모델 limit 과 창 × 9/10 의 작은 쪽)의 70% 에서 알림 한 번 · 세션 id 로 기록 찾기 ·
 #      압축 뒤 안내에 rollout 자리 · transcript-search 가 rollout 을 읽고 비밀값을 가린다(가짜 CODEX_HOME)
 #   ⑥ 압축 뒤 안내 끝에 사람이 친 말 원문 최근 20개(시각 · 오래된 것부터 · 도구 결과 · 태그 글 · 이미지 · pane 알림 · 압축 요약 빼고 · 요청 답 남김 · 가림 · 글자 상한 · 4MB 1초 안) · Codex rollout 도
@@ -34,6 +35,7 @@ body = tmp / "body"
 shutil.copytree(src / "scripts/lib", body / "scripts/lib", ignore=shutil.ignore_patterns("__pycache__"))
 shutil.copyfile(src / "scripts/hooks/compact-checkpoint.py", body / "scripts/hooks/compact-checkpoint.py")
 shutil.copyfile(src / "scripts/hooks/codex-context.py", body / "scripts/hooks/codex-context.py")
+shutil.copyfile(src / "scripts/hooks/lead-log-stop.py", body / "scripts/hooks/lead-log-stop.py")
 for name in ("transcript-search.mjs", "lead-log.mjs"):
     shutil.copyfile(src / "scripts" / name, body / "scripts" / name)
 shutil.copy2(src / "scripts/screen", body / "scripts/screen")   # lead-log.mjs 가 쓴 창 · 열린 pane 을 묻는다
@@ -180,7 +182,8 @@ code, _ = run("warn", "깨진 입력")
 check("깨진 입력에도 종료 0", code == 0)
 (body / ".claude/settings.json").write_text(json.dumps({"autoCompactWindow": 200000}))
 code, out = run("warn", {**payload, "session_id": "s-8"}, pane="pl1")
-check("아테나 세션 알림은 리드 기록을 가리킨다", "lead-log.mjs" in out and "리드 기록" in out, out)
+check("아테나 세션 알림은 리드 기록을 답 끝 📝 줄로 남기라고 한다(lead-log 단독 턴을 부르지 않게)", "📝 <정정|실패|사실|결정>: <한 줄>" in out and "리드 기록" in out
+      and "lead-log 를 따로 부르지 않는다" in out and "lead-log.mjs" not in out, out)
 check("아테나 세션 알림은 새로 시작할지 AskUserQuestion 으로 먼저 묻고 고른 때만 lead-fresh.py --plan 을 부르라고 한다",
       "AskUserQuestion" in out and "새로 시작할까요" in out and "lead-fresh.py" in out and "--plan" in out and "/new" not in out
       and out.index("AskUserQuestion") < out.index("lead-fresh.py") and "답이 없으면 부르지 않는다" in out, out)
@@ -201,14 +204,14 @@ check("다른 아테나 pane 은 따로 묻는다", "lead-fresh.py" in out, out)
 code, out = run("warn", {**payload, "session_id": "s-8f"})
 check("pane 을 모르면(lead-fresh.py 가 못 돈다) 묻지 않는다", out != "" and "lead-fresh.py" not in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9"}, env_extra={"ATHENA_AGENT": "fe"})
-check("위임 에이전트 알림은 리드 기록을 가리키지 않는다", out != "" and "lead-log.mjs" not in out, out)
+check("위임 에이전트 알림은 리드 기록을 가리키지 않는다", out != "" and "리드 기록" not in out and "📝" not in out, out)
 check("pane 을 모르는 위임 에이전트 알림은 스스로 새로 시작하라고 하지 않는다", "lead-fresh.py" not in out, out)
 # 에이전트 pane 은 묻지 않고 스스로 새로 시작한다(2026-11-11 사용자 결정 — 묻는 것은 아테나만)
 code, out = run("warn", {**payload, "session_id": "s-9a"}, pane="p41", env_extra={"ATHENA_AGENT": "fe", "ATHENA_ROLE": "agent"})
 check("에이전트 pane 알림은 Checkpoint(미커밋 상태 포함)를 갱신하고 lead-fresh.py --plan 을 부르라고 한다",
       "lead-fresh.py" in out and "--plan" in out and "미커밋" in out and "Checkpoint" in out
       and out.index("Checkpoint") < out.index("lead-fresh.py"), out)
-check("에이전트 pane 알림은 사용자에게 묻지 않는다", "AskUserQuestion" not in out and "묻지 않는다" in out and "lead-log.mjs" not in out, out)
+check("에이전트 pane 알림은 사용자에게 묻지 않는다", "AskUserQuestion" not in out and "묻지 않는다" in out and "리드 기록" not in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9b"}, pane="p41", env_extra={"ATHENA_AGENT": "fe", "ATHENA_ROLE": "agent"})
 check("에이전트 pane 은 새 세션마다 다시 알린다(묻는 것이 아니라 30분 쉬기 없음)", "lead-fresh.py" in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9c"}, pane="p42", env_extra={"ATHENA_AGENT": "reviewer", "ATHENA_ROLE": "reviewer"})
@@ -288,7 +291,7 @@ check("안내의 찾는 명령 경로에 스크립트가 있다", pathlib.Path(s
 print("④ 리드 기록")
 code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4")
 text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
-check("기록이 비었으면 적는 법을 알린다", text.startswith("📝 리드 기록") and "아직 비었다" in text and "lead-log.mjs" in text, text)
+check("기록이 비었으면 적는 법(답 끝 📝 줄)을 알린다", text.startswith("📝 리드 기록") and "아직 비었다" in text and "📝 <정정|실패|사실|결정>: <한 줄>" in text, text)
 code, out = node(body / "scripts/lead-log.mjs", "정정", "태그는 지우지 않는다 —\n release-version.js 가 다시 만든다", f"token={secret}")
 log = body / ".lead-log.md"
 saved = log.read_text() if log.exists() else ""
@@ -303,8 +306,12 @@ code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4")
 text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 check("압축 뒤 아테나 안내 맨 앞에 리드 기록 최근 줄 · 그다음 계획서", text.startswith("📝 리드 기록") and "[정정] 태그는" in text and "[결정] 두 번째 줄" in text
       and text.index("두 번째 줄") < text.index("20261105-new.md"), text)
-log_script = script_in(text, "lead-log.mjs")
-check("안내의 리드 기록 명령 경로에 스크립트가 있다", pathlib.Path(log_script).resolve() == (body / "scripts/lead-log.mjs").resolve() and pathlib.Path(log_script).is_file(), log_script)
+check("압축 뒤 안내도 새 줄은 답 끝 📝 줄로(lead-log 명령을 가리키지 않는다)", "📝 <정정|실패|사실|결정>: <한 줄>" in text and "lead-log.mjs" not in text, text)
+# 안내가 가리키는 📝 줄을 받아 적는 훅이 아테나 설정(Claude · Codex) Stop 에 걸려 있고 파일이 있다
+for name, settings in (("Claude", src / ".claude/settings.json"), ("Codex", src / ".codex/hooks.json")):
+    stops = [handler["command"] for entry in json.loads(settings.read_text())["hooks"].get("Stop", []) for handler in entry["hooks"]]
+    check(f"{name} 아테나 Stop 훅에 lead-log-stop.py", any("scripts/hooks/lead-log-stop.py" in command for command in stops), stops)
+check("lead-log-stop.py 가 있다", (src / "scripts/hooks/lead-log-stop.py").is_file())
 
 print("리드 기록을 아테나 창별로(F2)")
 own_fixture = tmp / "fixture-own"
@@ -337,6 +344,45 @@ check("다른 창의 안내에는 그 창 줄", "다른 열린 창 줄" in text 
 code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4", env_extra={**own_cli, "FAKE_SCREEN_FIXTURE": str(tmp / "none")})
 text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 check("열린 pane 을 못 읽으면 거르지 않는다(놓치지 않는 쪽)", "다른 열린 창 줄" in text and "내 창 줄" in text, text)
+
+print("답 끝 📝 줄 → 리드 기록(lead-log-stop.py · Stop 훅)")
+def stop_hook(payload, pane="px4", env_extra=None):
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("ATHENA_", "CLAUDE_CODE_AUTO_COMPACT", "CODEX_"))}
+    env.update({"ATHENA_SCREEN": "studio", "ATHENA_STUDIO": "1", "ATHENA_STUDIO_PANE_ID": pane, "TMPDIR": str(marks) + "/", **own_cli})
+    env.update(env_extra or {})
+    raw = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    done = subprocess.run(["python3", str(body / "scripts/hooks/lead-log-stop.py")], input=raw, capture_output=True, text=True, env=env, timeout=60)
+    return done.returncode, done.stdout + done.stderr
+def log_lines():
+    return [line for line in log.read_text().splitlines() if line.startswith("- ")] if log.exists() else []
+before = len(log_lines())
+answer = ("고쳤습니다.\n\n```\n📝 결정: 코드 블록 속 예시는 적지 않는다\n```\n"
+          f"📝 결정: 배포는 금요일에 하지 않는다 token={secret}\n  📝 사실 ： release-version.js 가 태그를 다시 만든다  \n📝 아무거나: 모르는 종류\n")
+code, out = stop_hook({"session_id": "stop-session-1", "last_assistant_message": answer})
+lines = log_lines()
+added = lines[before:]
+check("📝 줄마다 lead-log.mjs 와 같은 형식으로 적는다 — 쓴 창 · 종류 · 비밀값 가림 · 코드 블록 · 모르는 종류는 빼고 · 출력 없음 · 종료 0",
+      code == 0 and out == "" and len(added) == 2
+      and re.search(r"^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} <px4> \[결정\] 배포는 금요일에 하지 않는다", added[0]) is not None
+      and added[1].endswith("<px4> [사실] release-version.js 가 태그를 다시 만든다") and secret not in log.read_text()
+      and "코드 블록 속" not in log.read_text() and "모르는 종류" not in log.read_text(), f"{code} {out} {added}")
+code, out = stop_hook({"session_id": "stop-session-1", "last_assistant_message": answer})
+check("같은 답으로 다시 끝나도 두 번 적지 않는다", code == 0 and len(log_lines()) == len(lines), log_lines()[len(lines):])
+code, out = stop_hook({"session_id": "stop-session-2", "last_assistant_message": "📝 결정: 위임 에이전트 답"}, env_extra={"ATHENA_AGENT": "fe"})
+code2, _ = stop_hook({"session_id": "stop-session-3", "agent_id": "a1", "last_assistant_message": "📝 결정: 하위 에이전트 답"})
+check("위임 에이전트(ATHENA_AGENT) · 하위 에이전트(agent_id) 답은 적지 않는다", code == 0 and code2 == 0 and "에이전트 답" not in log.read_text(), log_lines()[-2:])
+stop_transcript = tmp / "stop-transcript.jsonl"
+stop_transcript.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in [
+    {"type": "assistant", "message": {"content": [{"type": "text", "text": "📝 결정: 지난 차례 답"}]}},
+    {"type": "user", "message": {"content": "다음"}},
+    {"type": "assistant", "message": {"content": [{"type": "text", "text": "끝냈습니다.\n📝 정정: 기록에서 읽은 줄"}, {"type": "tool_use", "name": "Bash", "input": {"command": "x"}}]}},
+]) + "\n")
+code, out = stop_hook({"session_id": "stop-session-4", "transcript_path": str(stop_transcript)})
+check("last_assistant_message 가 없으면 대화 기록 끝 assistant 글에서", code == 0 and log_lines()[-1].endswith("[정정] 기록에서 읽은 줄") and "지난 차례 답" not in log.read_text(), log_lines()[-1:])
+count = len(log_lines())
+code, out = stop_hook({"session_id": "stop-session-5", "last_assistant_message": "📝 표시 없는 그냥 답입니다"})
+code2, out2 = stop_hook("깨진 입력")
+check("📝 줄이 없거나 입력이 깨져도 조용히 종료 0", code == 0 and code2 == 0 and out == "" and out2 == "" and len(log_lines()) == count)
 
 print("여러 팩 구조의 리드 기록")
 pack_real = tmp / "data/packs/p1"
