@@ -6,7 +6,7 @@
 #      세션 첫 도구 뒤 첫 응답이 기록에 늦게 쓰여도 잠깐 기다려 알린다(2026-11-07 실측)
 #   ③ scripts/transcript-search.mjs: 대화 원문에서 낱말이 든 대목만 짧게 · 비밀값 가림 · 압축 뒤 안내에 원문 자리
 #   ④ scripts/lead-log.mjs: 리드 기록 덧붙이기(가림) · 압축 뒤 아테나 안내 맨 앞에 최근 줄 · 곧 압축 알림이 답 끝 📝 줄을 가리킨다 ·
-#      scripts/hooks/lead-log-stop.py: 답 끝 📝 줄을 lead-log.mjs 로 적기(창 표시 · 가림 · 코드 블록 빼기 · 두 번 안 적기 · 위임 에이전트 빼기 · 기록 끝 읽기)
+#      scripts/hooks/lead-log-stop.py: 답 끝 📝 줄을 lead-log.mjs 로 적기(창 표시 · 가림 · 코드 블록 빼기 · 두 번 안 적기 · 실패한 줄 다시 · 위임 에이전트 빼기 · 기록 끝 읽기(Claude · Codex rollout))
 #   ⑤ Codex(--tool=codex): rollout 의 token_count · 압축 기준(codex-cli 0.166.0 소스 셈 — 설정 · 모델 limit 과 창 × 9/10 의 작은 쪽)의 70% 에서 알림 한 번 · 세션 id 로 기록 찾기 ·
 #      압축 뒤 안내에 rollout 자리 · transcript-search 가 rollout 을 읽고 비밀값을 가린다(가짜 CODEX_HOME)
 #   ⑥ 압축 뒤 안내 끝에 사람이 친 말 원문 최근 20개(시각 · 오래된 것부터 · 도구 결과 · 태그 글 · 이미지 · pane 알림 · 압축 요약 빼고 · 요청 답 남김 · 가림 · 글자 상한 · 4MB 1초 안) · Codex rollout 도
@@ -383,6 +383,32 @@ count = len(log_lines())
 code, out = stop_hook({"session_id": "stop-session-5", "last_assistant_message": "📝 표시 없는 그냥 답입니다"})
 code2, out2 = stop_hook("깨진 입력")
 check("📝 줄이 없거나 입력이 깨져도 조용히 종료 0", code == 0 and code2 == 0 and out == "" and out2 == "" and len(log_lines()) == count)
+codex_rollout = tmp / "rollout-stop.jsonl"
+codex_rollout.write_text("\n".join(json.dumps(row, ensure_ascii=False) for row in [
+    {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "📝 결정: 코덱스 지난 답"}]}},
+    {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "📝 결정: 사용자 글"}]}},
+    {"type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "끝.\n📝 사실: 코덱스 기록에서 읽은 줄"}]}},
+    {"type": "event_msg", "payload": {"type": "token_count"}},
+]) + "\n")
+code, out = stop_hook({"session_id": "stop-session-6", "transcript_path": str(codex_rollout)})
+check("Codex rollout(response_item · role assistant · output_text) 끝 답에서도", code == 0 and log_lines()[-1].endswith("[사실] 코덱스 기록에서 읽은 줄")
+      and "코덱스 지난 답" not in log.read_text() and "사용자 글" not in log.read_text(), log_lines()[-1:])
+# lead-log.mjs 가 둘째 줄에서 실패하면 그 줄만 표시하지 않는다 — 고친 뒤 같은 입력을 다시 넣으면 그 줄부터
+real_log = body / "scripts/lead-log.mjs"
+saved_log = real_log.read_text()
+(body / "scripts/lead-log-real.mjs").write_text(saved_log)
+real_log.write_text("import { spawnSync } from 'node:child_process'\nif ((process.argv[3] ?? '').includes('둘째')) process.exit(1)\n"
+                   "process.exit(spawnSync(process.execPath, [new URL('./lead-log-real.mjs', import.meta.url).pathname, ...process.argv.slice(2)], { stdio: 'inherit' }).status ?? 1)\n")
+retry = {"session_id": "stop-session-7", "last_assistant_message": "📝 결정: 다시 첫째 줄\n📝 결정: 다시 둘째 줄"}
+code, out = stop_hook(retry)
+first = log.read_text()
+real_log.write_text(saved_log)
+code2, _ = stop_hook(retry)
+code3, _ = stop_hook(retry)
+again = log.read_text()
+check("lead-log.mjs 가 실패한 줄은 표시하지 않고 다시 넣으면 그 줄부터 — 성공한 줄은 두 번 안 적는다",
+      code == 0 and code2 == 0 and code3 == 0 and first.count("다시 첫째 줄") == 1 and "다시 둘째 줄" not in first
+      and again.count("다시 첫째 줄") == 1 and again.count("다시 둘째 줄") == 1, again.splitlines()[-3:])
 
 print("여러 팩 구조의 리드 기록")
 pack_real = tmp / "data/packs/p1"
