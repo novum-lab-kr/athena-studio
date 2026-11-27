@@ -260,6 +260,31 @@ test('번들 mergedOnly: 작업 브랜치에서 만들어도 머지된 커밋(or
   assert.equal(home.makeCoreBundle({ repoRoot: repo, out: path.join(outDir, 'head.bundle') }).tree, run(repo, 'rev-parse', 'HEAD:athena'))
 })
 
+// PR #380 리뷰 — 같은 out 을 격리 실행(HEAD)과 공유 집(mergedOnly)이 같이 쓸 때, 코어를 고쳤다 되돌려 트리가 같아도
+// 격리 실행이 만든 브랜치 기록(머지 전 커밋)을 공유 집 번들로 다시 쓰면 안 된다
+test('번들 mergedOnly: 트리가 같아도 머지 전 브랜치 기록으로 만든 지난 번들은 다시 쓰지 않는다', () => {
+  const repo = studioRepo()
+  run(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
+  const outDir = tmp()
+  const out = path.join(outDir, 'core.bundle')
+  const base = home.makeCoreBundle({ repoRoot: repo, out: path.join(outDir, 'base.bundle'), mergedOnly: true })
+  run(repo, 'checkout', '-q', '-b', 'feat/revert')
+  commitCore(repo, 'TRY.md', 'try\n')
+  fs.rmSync(path.join(repo, 'athena', 'TRY.md'))
+  run(repo, 'commit', '-q', '-am', 'revert try')
+  // 격리 실행 — HEAD 기록(고쳤다 되돌린 두 커밋 포함)으로 · 트리는 갈린 곳과 같다
+  const isolated = home.makeCoreBundle({ repoRoot: repo, out })
+  assert.equal(isolated.tree, base.tree)
+  assert.notEqual(isolated.commit, base.commit)
+  // 같은 out 으로 공유 집 실행 — 갈린 곳 기록으로 다시 만든다(조기 반환 · 지난 커밋 재사용 없음)
+  const shared = home.makeCoreBundle({ repoRoot: repo, out, mergedOnly: true })
+  assert.equal(shared.built, true)
+  assert.equal(shared.commit, base.commit)
+  assert.equal(home.bundleHead(out), base.commit)
+  // 반대로 갈린 곳 기록 번들은 브랜치(후손)에서 트리가 같으면 그대로 쓴다 — 앱 커밋마다 split 하지 않게
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out }).built, false)
+})
+
 test('팩 없는 본체 앞으로 감기: 깨끗하면 감고 origin/main 도 맞춤 · 고쳐 뒀거나 팩이 있으면 안 함', () => {
   const repo = studioRepo()
   const bundle = path.join(repo, 'core.bundle')
