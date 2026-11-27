@@ -2,12 +2,12 @@
 """서버 명령 판정 — **정말 위험한 것만 묻고 나머지는 바로**(2026-11-27 사용자 결정 "앵간한건 다 빼자" · 11-11 "위험한 것만 묻는다" 를 더 좁혔다).
 
 묻는 것(→ ssh-run.sh 가 [작업] 확인 요청) — ASK 표 · 아래 검사만:
-  - 재부팅 · 전원 끄기(reboot · shutdown · poweroff · halt · init · systemctl reboot/poweroff …)
+  - 재부팅 · 전원 끄기(reboot · shutdown · poweroff · halt · init · systemctl reboot/poweroff … · systemctl start/isolate reboot.target 무리 · systemd-run 안)
   - 디스크(mkfs · fdisk · parted · dd · mount · umount … — fdisk -l · parted -l · 인자 없는 mount 같은 목록 보기는 바로) · /dev 쓰기
   - 방화벽 바꾸기(ufw · iptables · nft · firewall-cmd — status · -L · list 같은 보기는 바로)
-  - 사용자 · 권한(useradd · userdel · usermod · passwd · visudo …) · sudoers · /etc/passwd 무리 · /etc/ssh · .ssh 쓰기
+  - 사용자 · 권한(useradd · userdel · usermod · passwd · visudo …) · sudoers · /etc/passwd 무리 · /etc/ssh · .ssh 쓰기(.ssh 는 읽기도 — 목록 보기만 바로)
   - 재귀 삭제(rm -r · rm -rf · find -delete)
-  - 비밀 파일 읽기 · 출력(.env · 키 · 인증서 … 이름 · env/printenv 단독 · ps e · systemctl show 의 Environment · docker inspect ·
+  - 비밀 파일 읽기 · 출력(.env · 키 · 인증서 … 이름 · env/printenv 단독 · set · export -p · declare -p 단독 · ps e · systemctl show 의 Environment · docker inspect ·
     compose config · kubectl secret · 이름에 TOKEN · SECRET · PASSWORD 가 든 $변수)
   - 클라우드 메타데이터 주소(169.254.* · metadata.* · 숫자로 감싼 IP)
 그 밖은 모두 바로 — 서비스 재시작 · 패키지 설치 · crontab · cp -r · sh -c · 명령 치환 · 변수 · * 펼침 · 판정 못 한 명령 ·
@@ -59,6 +59,10 @@ DEPTH_MAX = 6
 
 POWER = {'reboot', 'shutdown', 'poweroff', 'halt', 'init', 'telinit', 'kexec'}
 SYSTEMCTL_POWER = {'reboot', 'poweroff', 'halt', 'kexec', 'soft-reboot', 'suspend', 'hibernate', 'hybrid-sleep', 'suspend-then-hibernate', 'rescue', 'emergency'}
+# systemctl start · isolate 로 켜면 재부팅 · 전원 끄기가 되는 대상(isolate 는 확장자 없이 줘도 .target 이다) · 그 대상이 부르는 systemd-*.service — 2026-11-28 PR #382 · #384 리뷰
+POWER_UNIT = re.compile(r'^((reboot|poweroff|halt|kexec|soft-reboot|ctrl-alt-del|runlevel[06])(\.target)?|systemd-(reboot|poweroff|halt|kexec|soft-reboot)(\.service)?)$')
+# 대상 이름을 줘도 켜지 않는 systemctl 동사 — 보기만
+SYSTEMCTL_READ = {'status', 'show', 'cat', 'help', 'list-dependencies', 'is-active', 'is-enabled', 'is-failed', 'list-units', 'list-unit-files'}
 DISK = {'dd', 'umount', 'wipefs', 'gdisk', 'cfdisk', 'mkswap', 'swapoff', 'losetup'}
 # 목록 보기 옵션이 있으면 바로인 디스크 도구
 DISK_LIST = {'fdisk': {'-l', '--list'}, 'sfdisk': {'-l', '--list'}, 'parted': {'-l', '--list'}}
@@ -77,8 +81,12 @@ WRITERS = {'mv', 'tee', 'touch', 'mkdir', 'rm', 'rmdir', 'unlink', 'shred', 'tru
 WRAPPERS = {
     'sudo': 'ugpCDrtUhRT', 'doas': 'uC', 'nohup': '', 'nice': 'n', 'ionice': 'cnpP', 'timeout': 'sk', 'stdbuf': 'ioe',
     'setsid': '', 'exec': 'a', 'command': '', 'builtin': '', 'xargs': 'adEeIiLlnPs', 'watch': 'nqd', 'chrt': 'p', 'taskset': 'c',
-    'unbuffer': '', 'flock': 'wEc', 'caffeinate': 'w', 'busybox': '',
+    'unbuffer': '', 'flock': 'wEc', 'caffeinate': 'w', 'busybox': '', 'systemd-run': 'upEHMs',
 }
+# 값을 다음 낱말로 받는 긴 옵션(--unit x) — 그 감싸기만
+WRAPPER_LONG = {'systemd-run': {'--unit', '--property', '--setenv', '--description', '--slice', '--uid', '--gid', '--nice', '--working-directory',
+                                '--machine', '--host', '--service-type', '--on-active', '--on-boot', '--on-startup', '--on-unit-active',
+                                '--on-unit-inactive', '--on-calendar', '--timer-property', '--path-property', '--socket-property'}}
 # 첫 이름 인자를 하나 더 건너뛰는 감싸기(timeout <시간> · chroot <폴더> · flock <파일> · chrt <우선순위> · taskset <마스크>)
 WRAPPER_FIRST = {'timeout': 1, 'chroot': 1, 'flock': 1, 'chrt': 1, 'taskset': 1}
 # .ssh 폴더 아래 이름을 줘도 바로인 명령 — 목록 · 정보 보기만(cat · tar · cp 로 키를 읽는 것은 묻는다)
@@ -194,6 +202,10 @@ def dangerous(name, args, cwds):
         return f'재부팅 · 전원 끄기({name})'
     if name == 'systemctl' and first in SYSTEMCTL_POWER:
         return f'재부팅 · 전원 끄기(systemctl {first})'
+    if name == 'systemctl' and first not in SYSTEMCTL_READ:
+        unit = next((arg for arg in plain_args(args)[1:] if POWER_UNIT.match(arg)), None)
+        if unit:
+            return f'재부팅 · 전원 끄기(systemctl {first} {unit})'
     if name.startswith('mkfs') or name in DISK:
         return f'디스크({name})'
     if name in DISK_LIST and not any(arg in DISK_LIST[name] for arg in args):
@@ -223,6 +235,8 @@ def secret_output(name, args):
     """환경 변수 · 자격 증명을 보이는 명령"""
     if name in ('env', 'printenv'):
         return f'비밀값 출력({name} — 환경 변수가 보인다)'
+    if env_dump(name, args):
+        return f'비밀값 출력({" ".join([name] + args)} — 환경 변수가 보인다)'
     # 컨테이너 안에서 돌리는 env · printenv(docker exec web env · kubectl exec web -- printenv)
     if name in ('docker', 'podman', 'nerdctl', 'kubectl', 'oc') and 'exec' in args and any(arg in ('env', 'printenv') for arg in args):
         return f'비밀값 출력({name} exec … env — 환경 변수가 보인다)'
@@ -244,6 +258,15 @@ def secret_output(name, args):
         if any(word.startswith(('secret', 'configmap', 'cm')) for word in words) and any(word in ('get', 'describe', 'edit') for word in words):
             return f'비밀값 출력({name} secret)'
     return None
+
+
+def env_dump(name, args):
+    """셸 변수를 통째로 내보내는 꼴 — 인자 없는 set · export · 이름 없는 export -p · declare · typeset(-f · -F 함수 목록은 빼고)"""
+    if name == 'set':
+        return not args
+    if name not in ('export', 'declare', 'typeset') or plain_args(args):
+        return False
+    return not any(arg.startswith('-') and set(arg[1:]) <= {'f', 'F'} for arg in args)
 
 
 def property_value(args, index):
@@ -326,12 +349,17 @@ def unwrap(words):
             continue
         if name in WRAPPERS or name in WRAPPER_FIRST:
             values, rest = WRAPPERS.get(name, ''), words[1:]
+            # command -v · -V 는 명령을 찾기만 한다(돌리지 않는다)
+            if name == 'command' and command_lookup(rest):
+                return name, words[1:], inner
             while rest and rest[0].startswith('-') and rest[0] != '-':
                 option = rest[0]
                 rest = rest[1:]
                 if option == '--':
                     break
-                if not option.startswith('--') and option[-1] in values and rest:
+                if not option.startswith('--') and takes_next(option, values) and rest:
+                    rest = rest[1:]
+                elif option in WRAPPER_LONG.get(name, ()) and rest:
                     rest = rest[1:]
             rest = rest[WRAPPER_FIRST.get(name, 0):]
             if not rest:
@@ -340,6 +368,24 @@ def unwrap(words):
             continue
         return name, words[1:], inner
     return '', [], inner
+
+
+def takes_next(option, values):
+    """짧은 옵션 묶음이 다음 낱말을 값으로 받나 — getopt 처럼 값 받는 글자가 처음 나온 뒤 글자가 값이다(-ucleanup · -uroot 는 붙은 값)"""
+    for position, letter in enumerate(option[1:], 1):
+        if letter in values:
+            return position == len(option) - 1
+    return False
+
+
+def command_lookup(args):
+    """command 앞 옵션(-p · -v · -V 묶음)에 -v · -V 가 있으면 참 — 명령 이름 뒤 인자(rm -rfv)는 보지 않는다"""
+    for arg in args:
+        if not re.fullmatch(r'-[pvV]+', arg):
+            return False
+        if re.search(r'[vV]', arg):
+            return True
+    return False
 
 
 def shell_strings(name, args):
@@ -478,7 +524,7 @@ def check_words(words, cwds, depth, names):
         if assigned:
             names[assigned.group(1)] = assigned.group(2)
     name, args, inner = unwrap(words)
-    if name in ('export', 'declare', 'typeset', 'local', 'readonly'):
+    if name in ('export', 'declare', 'typeset', 'local', 'readonly') and not env_dump(name, args):
         return check_words(args, cwds, depth, names)
     if names:
         args = [SHELL_VAR.sub(lambda match: names.get(match.group(1).strip('{}'), match.group(0)), arg) if '$' in arg else arg for arg in args]

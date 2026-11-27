@@ -57,6 +57,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix PR auto review silently skipping plans with no agent — reason left in plan
 - Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix
 - Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only
+- Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set
 
 ## 0.71 (v0.71.0 – · Nov 21, 2026)
 
