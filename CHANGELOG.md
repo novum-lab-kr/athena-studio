@@ -55,6 +55,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix PR auto review stopping after 2 reviews — up to 3 reviews for every PR
 - Fix lightweight plans breaking when the title or instructions contain $ — written as typed
 - Fix PR auto review silently skipping plans with no agent — reason left in plan
+- Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix
 
 ## 0.71 (v0.71.0 – · Nov 21, 2026)
 

@@ -110,7 +110,25 @@ cp -R "$SRC/scripts" "$CORE/scripts"
 write_fake_screen "$CORE/scripts/screen"
 # FAKE_VERIFY_KILL — 검증 도중 부른 쪽(node)을 죽인다(머지 직전 확인 중에 처리기가 꺼진 경우)
 # FAKE_VERIFY_LOG — 검증 시작 · 끝을 적는다(리뷰 ‖ 검증 순서 · 멈춤 확인) · FAKE_VERIFY_SLEEP — 검증이 그만큼 걸리는 것처럼
-printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-start >> "$FAKE_VERIFY_LOG"\n[ -n "$FAKE_VERIFY_SLEEP" ] && sleep "$FAKE_VERIFY_SLEEP"\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-end >> "$FAKE_VERIFY_LOG"\n[ -z "$FAKE_VERIFY_FAIL" ]\n' > "$CORE/scripts/verify/reuse.sh"; chmod +x "$CORE/scripts/verify/reuse.sh"
+printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-start >> "$FAKE_VERIFY_LOG"\n[ -n "$FAKE_VERIFY_SLEEP" ] && sleep "$FAKE_VERIFY_SLEEP"\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-end >> "$FAKE_VERIFY_LOG"\n[ -z "$FAKE_VERIFY_FAIL" ] && exit 0\ncat "$(dirname "$0")/fake-fail.txt"\nexit 1\n' > "$CORE/scripts/verify/reuse.sh"; chmod +x "$CORE/scripts/verify/reuse.sh"
+# 가짜 검증이 실패할 때 찍는 출력 — scripts/verify/_lib.sh print_summary 모양(실패 단계 표 줄 · 로그 블록)
+cat > "$CORE/scripts/verify/fake-fail.txt" <<'FAKEOUT'
+## 검증 결과 — web (feat/x @ abc1234, 2026-11-27 10:00)
+
+| 단계 | 결과 | 소요 |
+|---|---|---|
+| `npm run check` | ✅ 통과 | 2s |
+| `npm test` | ❌ 실패 (exit 1) | 3s |
+
+### ❌ npm test 로그 (마지막 40줄)
+```
+ok 1 - 더하기
+not ok 2 - 합계
+AssertionError: 3 !== 4
+```
+
+전체 로그: /tmp/x
+FAKEOUT
 # 워크트리 — origin(bare) 의 main 위에 커밋 하나(부모 하나 · squash). 머지 방식은 워크트리에서 origin/main..HEAD 의 부모 수로 정한다
 G init -q --bare "$TMP/origin-confirm.git"
 G clone -q "$TMP/origin-confirm.git" "$TMP/wt-confirm" 2>/dev/null
