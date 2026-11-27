@@ -616,21 +616,41 @@ async function prepareCore({ layout, bundle, home, runCore, panesStateFile = nul
 // athena/ 폴더 기록만 뽑아(git subtree split) 같은 기록이면 늘 같은 커밋을 낸다(코어 커밋의 후손 — 앞으로 감기가 된다). athena/ 트리가 그대로면 다시 만들지 않는다.
 // 커밋하지 않은 athena/ 변경은 들어가지 않는다. 레포 ref 는 만들지 않는다(임시 bare 저장소 + alternates 에서 번들을 만든다)
 // version: 이 앱 체크아웃의 버전 — 번들에 버전 ref 로 싣는다(위 VERSION_REF_PREFIX)
-/** @param {{ repoRoot: string, out: string, prefix?: string, version?: string | null, env?: NodeJS.ProcessEnv, log?: (message: string) => void }} options */
-function makeCoreBundle({ repoRoot, out, prefix = 'athena', version = null, env = gitEnv(), log = () => {} }) {
+// mergedOnly: 공유 스튜디오 집(~/.athena-studio)으로 켤 때 — HEAD 대신 HEAD 와 origin/main 이 갈린 곳(머지된 커밋)에서 만든다.
+// 작업 브랜치의 머지 전 코어 커밋이 공유 코어 main 에 들어가면, 같은 내용이 squash 로 main 에 들어온 뒤 코어가 갈라져
+// 업데이트가 멈춘다(2026-11-26). origin/main 이 없는 레포는 HEAD 그대로. 격리 집(ATHENA_STUDIO_HOME)은 HEAD — 브랜치 코어 시험용
+/** @param {{ repoRoot: string, out: string, prefix?: string, version?: string | null, mergedOnly?: boolean, env?: NodeJS.ProcessEnv, log?: (message: string) => void }} options */
+function makeCoreBundle({ repoRoot, out, prefix = 'athena', version = null, mergedOnly = false, env = gitEnv(), log = () => {} }) {
   const versionName = version && VERSION_NAME_RE.test(version) ? version : null
+  let source = 'HEAD'
+  if (mergedOnly && gitOk(['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main'], { cwd: repoRoot, env })) {
+    try {
+      source = git(['merge-base', 'HEAD', 'refs/remotes/origin/main'], { cwd: repoRoot, env })
+    } catch (error) {
+      const failure = /** @type {ExecError} */ (error)
+      return { ok: false, error: 'no-merge-base', message: String(failure.stderr || failure.message).trim().slice(0, 300) }
+    }
+  }
   let tree
   try {
-    tree = git(['rev-parse', `HEAD:${prefix}`], { cwd: repoRoot, env })
+    tree = git(['rev-parse', `${source}:${prefix}`], { cwd: repoRoot, env })
   } catch (error) {
     const failure = /** @type {ExecError} */ (error)
     return { ok: false, error: 'no-subtree', message: String(failure.stderr || failure.message).trim().slice(0, 300) }
   }
+  if (source !== 'HEAD' && !gitOk(['diff', '--quiet', source, 'HEAD', '--', prefix], { cwd: repoRoot, env })) {
+    log(`이 브랜치의 머지 전 ${prefix}/ 커밋은 번들에 넣지 않아요 — origin/main 과 갈린 곳 ${source.slice(0, 12)} 까지(브랜치 코어 시험은 ATHENA_STUDIO_HOME 격리 집으로)`)
+  }
+  const sourceCommit = git(['rev-parse', `${source}^{commit}`], { cwd: repoRoot, env })
   const marker = `${out}.json`
   const saved = readJson(marker)
-  if (saved && saved.tree === tree && (saved.version || null) === versionName && saved.commit && bundleHead(out, { env }) === saved.commit) return { ok: true, built: false, commit: saved.commit, tree, version: versionName }
+  // 지난 번들은 그 출처 커밋이 지금 출처와 같거나 조상일 때만 다시 쓴다 — 트리가 같아도 격리 실행(HEAD)이 만든
+  // 머지 전 브랜치 기록을 공유 집(mergedOnly · 갈린 곳) 번들로 쓰지 않게. 출처가 없는 옛 마커는 다시 만든다
+  const savedSource = saved && typeof saved.source === 'string' ? saved.source : null
+  const sameLineage = Boolean(savedSource && (savedSource === sourceCommit || gitOk(['merge-base', '--is-ancestor', savedSource, sourceCommit], { cwd: repoRoot, env })))
+  if (saved && sameLineage && saved.tree === tree && (saved.version || null) === versionName && saved.commit && bundleHead(out, { env }) === saved.commit) return { ok: true, built: false, commit: saved.commit, tree, version: versionName }
   // 트리가 같으면 subtree split(오래 걸린다)을 다시 돌리지 않고 지난 커밋을 쓴다 — 버전(0.2.1+N)만 바뀐 앱 커밋마다 split 하지 않게
-  const reuse = Boolean(saved && saved.tree === tree && saved.commit && gitOk(['cat-file', '-e', `${saved.commit}^{commit}`], { cwd: repoRoot, env }))
+  const reuse = Boolean(saved && sameLineage && saved.tree === tree && saved.commit && gitOk(['cat-file', '-e', `${saved.commit}^{commit}`], { cwd: repoRoot, env }))
   /** @type {string} */
   let commit
   if (reuse) {
@@ -640,7 +660,7 @@ function makeCoreBundle({ repoRoot, out, prefix = 'athena', version = null, env 
     commit = savedCommit
   } else {
     log(`코어 번들 만들기 — ${prefix}/ 트리 ${tree.slice(0, 12)}`)
-    commit = /** @type {string} */ (git(['subtree', 'split', '--prefix', prefix, 'HEAD'], { cwd: repoRoot, env, timeout: 600000 }).split('\n').pop()).trim()
+    commit = /** @type {string} */ (git(['subtree', 'split', '--prefix', prefix, source], { cwd: repoRoot, env, timeout: 600000 }).split('\n').pop()).trim()
   }
   const objects = git(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repoRoot, env })
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-core-bundle-'))
@@ -658,7 +678,8 @@ function makeCoreBundle({ repoRoot, out, prefix = 'athena', version = null, env 
     fs.mkdirSync(path.dirname(out), { recursive: true })
     git(['bundle', 'create', '--quiet', building, ...refs], { cwd: scratch, env, timeout: 600000 })
     fs.renameSync(building, out)
-    writeJson(marker, { tree, commit, version: versionName, at: new Date().toISOString() })
+    // 다시 쓴 지난 커밋이면 출처도 지난 것 그대로 — 번들 기록을 낸 출처를 남긴다
+    writeJson(marker, { tree, commit, source: reuse ? savedSource : sourceCommit, version: versionName, at: new Date().toISOString() })
     return { ok: true, built: true, commit, tree, version: versionName }
   } catch (error) {
     fs.rmSync(building, { force: true })

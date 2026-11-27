@@ -56,6 +56,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix lightweight plans breaking when the title or instructions contain $ — written as typed
 - Fix PR auto review silently skipping plans with no agent — reason left in plan
 - Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix
+- Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only
 
 ## 0.71 (v0.71.0 – · Nov 21, 2026)
 

@@ -215,6 +215,76 @@ test('켤 때 판단: 같음 · 앞 · 뒤 — 뒤면 건드리지 않는다', (
   assert.equal(home.bundleStatus({ coreDir, bundle: oldBundle }).state, 'behind')
 })
 
+// 2026-11-26 사고 — 작업 브랜치 워크트리의 개발 앱이 머지 전 커밋으로 번들 main 을 만들어 공유 코어를 감았고,
+// 같은 내용이 squash 로 main 에 들어가자 코어가 갈라져(diverged) 켤 때마다 업데이트가 멈췄다
+test('번들 mergedOnly: 작업 브랜치에서 만들어도 머지된 커밋(origin/main 과 갈린 곳)까지만 — squash 머지 뒤에도 앞으로 감긴다', () => {
+  const repo = studioRepo()
+  const syncOrigin = () => run(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
+  syncOrigin()
+  // 번들은 레포 밖에(commitCore 의 add -A 에 섞이지 않게)
+  const outDir = tmp()
+  const mainBundle = path.join(outDir, 'main.bundle')
+  const base = home.makeCoreBundle({ repoRoot: repo, out: mainBundle, mergedOnly: true })
+  const coreDir = path.join(tmp(), 'core')
+  home.installCore({ bundle: mainBundle, coreDir })
+  // 작업 브랜치 — 코어를 고친 커밋(아직 머지 전)
+  run(repo, 'checkout', '-q', '-b', 'feat/core')
+  commitCore(repo, 'BRANCH.md', 'branch\n')
+  const branchBundle = path.join(outDir, 'branch.bundle')
+  const onBranch = home.makeCoreBundle({ repoRoot: repo, out: branchBundle, mergedOnly: true })
+  assert.equal(onBranch.ok, true)
+  // 브랜치 커밋은 번들에 없다 — 코어를 건드리지 않는다(같음)
+  assert.equal(onBranch.commit, base.commit)
+  assert.equal(home.bundleStatus({ coreDir, bundle: branchBundle }).state, 'same')
+  // main 이 그새 앞으로 가도(브랜치가 따라잡지 않음) 브랜치의 앱보다 새 코어는 싣지 않는다 — 갈린 곳까지
+  run(repo, 'checkout', '-q', 'main')
+  fs.writeFileSync(path.join(repo, 'README.md'), 'studio 2\n')
+  commitCore(repo, 'MAIN.md', 'main\n')
+  syncOrigin()
+  run(repo, 'checkout', '-q', 'feat/core')
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out: branchBundle, mergedOnly: true }).commit, base.commit)
+  // squash 머지 — 같은 내용이 다른 커밋으로 main 에 들어간다 → main 에서 만든 번들은 앞(갈라지지 않는다)
+  run(repo, 'checkout', '-q', 'main')
+  run(repo, 'merge', '-q', '--squash', 'feat/core')
+  run(repo, 'commit', '-q', '-m', 'squash feat/core')
+  syncOrigin()
+  const merged = home.makeCoreBundle({ repoRoot: repo, out: mainBundle, mergedOnly: true })
+  assert.equal(home.bundleStatus({ coreDir, bundle: mainBundle }).state, 'ahead')
+  assert.equal(home.fastForwardPackless({ coreDir, bundle: mainBundle }).ok, true)
+  assert.equal(run(coreDir, 'rev-parse', 'HEAD'), merged.commit)
+  // origin/main 이 없는 레포(원격 없음)는 HEAD 그대로 · mergedOnly 를 안 주면(격리 실행) HEAD 그대로
+  run(repo, 'update-ref', '-d', 'refs/remotes/origin/main')
+  run(repo, 'checkout', '-q', 'feat/core')
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out: branchBundle, mergedOnly: true }).tree, run(repo, 'rev-parse', 'HEAD:athena'))
+  syncOrigin()
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out: path.join(outDir, 'head.bundle') }).tree, run(repo, 'rev-parse', 'HEAD:athena'))
+})
+
+// PR #380 리뷰 — 같은 out 을 격리 실행(HEAD)과 공유 집(mergedOnly)이 같이 쓸 때, 코어를 고쳤다 되돌려 트리가 같아도
+// 격리 실행이 만든 브랜치 기록(머지 전 커밋)을 공유 집 번들로 다시 쓰면 안 된다
+test('번들 mergedOnly: 트리가 같아도 머지 전 브랜치 기록으로 만든 지난 번들은 다시 쓰지 않는다', () => {
+  const repo = studioRepo()
+  run(repo, 'update-ref', 'refs/remotes/origin/main', 'main')
+  const outDir = tmp()
+  const out = path.join(outDir, 'core.bundle')
+  const base = home.makeCoreBundle({ repoRoot: repo, out: path.join(outDir, 'base.bundle'), mergedOnly: true })
+  run(repo, 'checkout', '-q', '-b', 'feat/revert')
+  commitCore(repo, 'TRY.md', 'try\n')
+  fs.rmSync(path.join(repo, 'athena', 'TRY.md'))
+  run(repo, 'commit', '-q', '-am', 'revert try')
+  // 격리 실행 — HEAD 기록(고쳤다 되돌린 두 커밋 포함)으로 · 트리는 갈린 곳과 같다
+  const isolated = home.makeCoreBundle({ repoRoot: repo, out })
+  assert.equal(isolated.tree, base.tree)
+  assert.notEqual(isolated.commit, base.commit)
+  // 같은 out 으로 공유 집 실행 — 갈린 곳 기록으로 다시 만든다(조기 반환 · 지난 커밋 재사용 없음)
+  const shared = home.makeCoreBundle({ repoRoot: repo, out, mergedOnly: true })
+  assert.equal(shared.built, true)
+  assert.equal(shared.commit, base.commit)
+  assert.equal(home.bundleHead(out), base.commit)
+  // 반대로 갈린 곳 기록 번들은 브랜치(후손)에서 트리가 같으면 그대로 쓴다 — 앱 커밋마다 split 하지 않게
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out }).built, false)
+})
+
 test('팩 없는 본체 앞으로 감기: 깨끗하면 감고 origin/main 도 맞춤 · 고쳐 뒀거나 팩이 있으면 안 함', () => {
   const repo = studioRepo()
   const bundle = path.join(repo, 'core.bundle')

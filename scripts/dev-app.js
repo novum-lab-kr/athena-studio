@@ -218,12 +218,13 @@ function build() {
 
 // 앱이 들고 갈 아테나 코어 — 레포 athena/ 의 커밋된 기록을 git 번들로. 앱은 첫 실행 때 ~/.athena-studio/core 로 풀고,
 // 새 커밋이면 켤 때 업데이트한다. 못 만들어도 켜기는 한다(이미 만든 번들 · 이미 푼 코어를 쓴다).
-// 앱 버전(git describe · 태그가 없으면 package.json)을 번들에 같이 싣는다 — 코어 version --json 의 version
+// 앱 버전(git describe · 태그가 없으면 package.json)을 번들에 같이 싣는다 — 코어 version --json 의 version.
+// 공유 스튜디오 집이면 머지된 커밋까지만(mergedOnly — 작업 브랜치 워크트리가 공유 코어를 갈라 놓지 않게) · 격리 집이면 HEAD
 function makeBundle() {
   const out = studioHome.coreBundlePath({ appRoot: ROOT, packaged: false })
   try {
     const appVersion = version.describeVersion({ repoRoot: ROOT, env: studioHome.gitEnv() }) || require(path.join(ROOT, 'package.json')).version
-    const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, version: appVersion, log: (line) => console.log(`[dev-app] ${line}`) })
+    const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, version: appVersion, mergedOnly: !process.env.ATHENA_STUDIO_HOME, log: (line) => console.log(`[dev-app] ${line}`) })
     if (!made.ok) {
       console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
       return false
