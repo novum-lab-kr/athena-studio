@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 등록한 서버에 들어가는 유일한 길 — 서버 에이전트 · 앱 서버 상태 칸이 쓴다(docs/setup.md "서버 하나 더하기")
-#   scripts/ssh-run.sh <서버> -- <명령…>          원격 명령 — 위험 명령(재시작 · 삭제 · 설치 · 권한 …)과 판정 못 한 명령만 [작업] 확인 요청, 나머지는 바로
+#   scripts/ssh-run.sh <서버> -- <명령…>          원격 명령 — 정말 위험한 것(재부팅 · 디스크 · 방화벽 · 사용자 · 권한 · 재귀 삭제 · 비밀 파일 · 메타데이터)만 [작업] 확인 요청, 나머지는 바로
 #   scripts/ssh-run.sh <서버> --get <원격> <로컬>  파일 받기(.env* · 키 · 인증서 파일은 받지 않는다)
-#   scripts/ssh-run.sh <서버> --put <로컬> <원격>  파일 고치기 — 원격 백업 → 덮어쓰기(보호 경로만 먼저 확인 — diff · 백업 위치)
+#   scripts/ssh-run.sh <서버> --put <로컬> <원격>  파일 고치기 — 원격 백업 → 덮어쓰기(보호 경로 — sudoers · /etc/passwd 무리 · /etc/ssh · .ssh · /dev — 만 먼저 확인 — diff · 백업 위치)
 #   scripts/ssh-run.sh <서버> --status             상태 칸 읽기(고정 읽기 명령 · 묻지 않는다 — 앱 서버 상태 칸)
 #   scripts/ssh-run.sh <서버> --history            지난 기록 읽기(sysstat sar 하루 파일 · 묻지 않는다 — 앱 그래프의 빈 구간)
 #   scripts/ssh-run.sh --list                      등록한 서버 이름 목록
@@ -10,7 +10,7 @@
 # <서버> 는 팩 pack.json servers[] 의 name(등록한 것만) — ssh 별칭으로 바꿔 부른다. 주소 · 키는 ~/.ssh/config 에만 있다.
 set -euo pipefail
 
-# 늘 BatchMode(비밀번호를 묻지 않는다) · ConnectTimeout 10초. 명령 판정(2026-11-11 "위험한 것만 묻는다") · 승인은 scripts/lib/server_allow.py
+# 늘 BatchMode(비밀번호를 묻지 않는다) · ConnectTimeout 10초. 명령 판정(2026-11-27 "앵간한건 다 빼자" — 정말 위험한 것만 묻는다) · 승인은 scripts/lib/server_allow.py
 # 시험용: ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN(bin/athena 대신 — 요청 열기 · 승인 읽기 둘 다) · ATHENA_GUARD_SERVERS ·
 #   ATHENA_GUARD_USED_FILE(쓴 승인 기록 — 기본 팩 데이터 state/server-approvals-used)
 # (승인은 늘 요청 bin 의 request show 로 읽는다 — 답을 환경 값으로 넣는 길은 없다)
@@ -184,7 +184,7 @@ print("; ".join(parts + ["echo ==end"]))')"
       echo "❌ 원격 파일을 읽지 못했다(ssh 종료 $status) — 올리지 않았다" >&2
       exit 1
     fi
-    # 보호 경로(/etc/sudoers · cron · /etc/ssh · .ssh …) · 다음에 실행되는 자리(profile.d · systemd · /usr/local/bin · 셸 rc …)만 확인 — 2026-11-11 결정 "위험한 것만 묻는다". 나머지는 백업 뒤 바로 덮어쓴다.
+    # 보호 경로(sudoers · /etc/passwd 무리 · /etc/ssh · .ssh · /dev)만 확인 — 2026-11-27 결정 "앵간한건 다 빼자"(cron · systemd · /usr/local/bin · 셸 rc 도 이제 바로). 나머지는 백업 뒤 바로 덮어쓴다.
     # 확인 키 — 서버 · 경로 · 로컬 내용 · 원격 내용이 같을 때만 같은 승인(어느 쪽이든 바뀌면 다시 묻는다)
     SUMS="$(shasum -a 256 "$LOCAL" "$TMP/remote" | cut -d' ' -f1 | tr '\n' ' ')"
     KEY="$(python3 "$ALLOW" key "$NAME" put "$REMOTE $SUMS")"

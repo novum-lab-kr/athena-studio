@@ -1,37 +1,32 @@
 #!/usr/bin/env python3
-"""서버 명령 판정 — **위험한 것만 묻는다**(2026-11-11 사용자 결정 · 11-08 "서버는 엄격하게(쓰기는 명령마다 확인)" 를 바꿨다).
+"""서버 명령 판정 — **정말 위험한 것만 묻고 나머지는 바로**(2026-11-27 사용자 결정 "앵간한건 다 빼자" · 11-11 "위험한 것만 묻는다" 를 더 좁혔다).
 
-바로 실행: 읽기 · mkdir · 파일 쓰기(cp · tee · touch · > >> · sed -i) · systemctl daemon-reload · 여러 명령 잇기(&& ; | — 명령마다 다 본다).
-확인(→ ssh-run.sh 가 [작업] 확인 요청): 위험 표 DANGER 의 명령(서비스 켜기 · 끄기 · 재시작 · 삭제 · 설치 · 권한 · 사용자 ·
-  전원 · 디스크 · 방화벽 · 크론) · 다른 명령을 돌리는 것 RUNNERS(sh -c · xargs · awk · find -exec …) · 그 밖에 판정 못 한 명령.
-  쓰기도 보호 경로(PROTECTED — /dev · /proc · /sys · /boot · sudoers · passwd · shadow · cron · fstab · /etc/ssh · .ssh)와
-  다음에 실행되는 자리(RUN_SPOTS — profile · rc.local · init.d · systemd · ld.so.conf · sysctl · apt · hosts · bin · lib · 홈의 셸 rc)면 확인.
-  mkdir 은 빈 폴더라 RUN_SPOTS 를 보지 않는다(mkdir -p /etc/systemd/system/x.service.d 는 결정대로 바로).
-  클라우드 메타데이터 주소(169.254.* · metadata.* · 숫자로 감싼 IP) curl 도 확인(자격 증명이 나온다).
-그대로 막는 것(= 확인 받기 — 바로 돌지 않는다):
-  - 비밀값 파일 이름(.env · 키 · 인증서 · ssh_host_*_key · .docker/config.json · .kube/config …)을 읽기 · 쓰기 · 옵션 값 어디든 — 흔한 이름만 안다
-  - 원격 셸이 펼쳐 이름 검사를 비켜 가는 글자 — 명령 치환 $( ) · 백틱 · ${…} 꼴 · $'…' · 따옴표 밖 변수 · 따옴표 밖 * ? · 닫힌 [ ] ·
-    , 나 .. 가 든 { } · 맨 앞이 아닌 ~ (2026-11-25 셸 문법대로 읽는다 — 홑따옴표 안 · \$ · 낱말 끝 $ 는 글자 그대로라 된다.
-    큰따옴표 안 단순 변수는 SHELL_VARS 의 이름만 — 자리표 VAR 로 바꿔 넘기고, 변수가 든 낱말은 FREE 읽기 명령의 인자만 된다)
-  - 환경 변수를 보이는 것(systemctl show 의 옵션 없음 · -a · -p Environment · ps e · /proc/*/environ · env · printenv · docker inspect ·
-    SHELL_VARS 밖의 $이름 …)
-  - 비밀 파일까지 읽는 재귀(grep -r · diff -r) · 끝없이 도는 것(tail -f · 간격만 준 반복)
-  - heredoc · 서브셸 ( ) · <( ) · 백그라운드 & · 줄바꿈 · VAR=값 앞붙임 · 경로로 부른 명령(/tmp/x) · sudo 의 -n 밖 옵션
-옵션은 명령마다: 옵션이 위험할 수 있는 명령(systemctl · journalctl · docker · git 앞 옵션 · curl · date · hostname …)은 허용 옵션 목록(SPECS),
-  나머지 읽기 · 쓰기 도구(FREE)는 옵션 자유 + 막는 옵션(FREE_BANS — 줄임 --out 같은 GNU 앞부분 맞춤도 막는다).
-리다이렉트 앞 fd 숫자는 원문에서 연산자에 바로 붙은 것(2> · 2>&1)만 — 띄어 쓴 숫자(date 11081200 >/dev/null)는 인자로 본다.
+묻는 것(→ ssh-run.sh 가 [작업] 확인 요청) — ASK 표 · 아래 검사만:
+  - 재부팅 · 전원 끄기(reboot · shutdown · poweroff · halt · init · systemctl reboot/poweroff …)
+  - 디스크(mkfs · fdisk · parted · dd · mount · umount … — fdisk -l · parted -l · 인자 없는 mount 같은 목록 보기는 바로) · /dev 쓰기
+  - 방화벽 바꾸기(ufw · iptables · nft · firewall-cmd — status · -L · list 같은 보기는 바로)
+  - 사용자 · 권한(useradd · userdel · usermod · passwd · visudo …) · sudoers · /etc/passwd 무리 · /etc/ssh · .ssh 쓰기
+  - 재귀 삭제(rm -r · rm -rf · find -delete)
+  - 비밀 파일 읽기 · 출력(.env · 키 · 인증서 … 이름 · env/printenv 단독 · ps e · systemctl show 의 Environment · docker inspect ·
+    compose config · kubectl secret · 이름에 TOKEN · SECRET · PASSWORD 가 든 $변수)
+  - 클라우드 메타데이터 주소(169.254.* · metadata.* · 숫자로 감싼 IP)
+그 밖은 모두 바로 — 서비스 재시작 · 패키지 설치 · crontab · cp -r · sh -c · 명령 치환 · 변수 · * 펼침 · 판정 못 한 명령 ·
+  /etc/systemd · /usr/local/bin 쓰기 …
+어디에 숨겨도 같은 검사 — ; && || | 줄바꿈 · $( ) · 백틱 · <( ) · sh -c '…' · eval · find -exec · sudo · env · xargs · timeout 같은
+  감싸기를 벗겨 명령마다 본다. 실수 방지용이지 보안 경계가 아니다(변수로 부른 명령 · 스크립트 파일 안은 보지 못한다).
 쓰는 곳: scripts/ssh-run.sh(실행 전 판정 · 승인 확인) · 앱 서버 상태 칸 · 등록 접속 시험(`true`).
 
 CLI(ssh-run.sh 가 부른다)
-  server_allow.py check <원격 명령>                 허용이면 0 · 아니면 1 + 이유 한 줄(stdout)
+  server_allow.py check <원격 명령>                 바로면 0 · 물을 것이면 1 + 이유 한 줄(stdout)
   server_allow.py key <서버> <종류> <글…>           확인 요청 중복 방지 키 server-<종류>:<해시 12자>
   server_allow.py approved <요청 bin> <요청 id> <키> [<사용 기록 파일>]
                                                     그 요청이 이 키 · 답 "실행" · 60분 안 · 아직 안 쓴 승인이면 0 — 쓴 것으로 적고(한 번만) answered 면 요청을 닫는다
   server_allow.py secret <경로>                     비밀값이 들 수 있는 파일 이름이면 0(ssh-run.sh --get · --put 이 부른다)
-  server_allow.py protected <경로>                  쓰면 확인할 보호 경로면 0 + 이유(ssh-run.sh --put 이 부른다)
+  server_allow.py protected <경로>                  쓰면 물을 경로(sudoers · /etc/passwd 무리 · /etc/ssh · .ssh · /dev)면 0 + 이유(ssh-run.sh --put 이 부른다)
 """
 import datetime
 import fcntl
+import fnmatch
 import hashlib
 import json
 import os
@@ -52,215 +47,43 @@ EXAMPLE_NAME = re.compile(r"^\.env\.(example|sample|template)$")
 SECRET_PATH = re.compile(r"(^|/)(\.docker/config\.json|\.kube/config)$", re.IGNORECASE)
 # SECRET_PATH 의 폴더 — cd 로 간 곳을 모를 때 상대 경로를 이 아래로 넣어 본다(SECRET_PATH 와 같이 고친다)
 SECRET_DIRS = ('.docker', '.kube')
-# 따옴표 밖이면 원격 셸이 펼치는 글자 — 글롭 * ? [ · 중괄호 펼침 { } · 홈 ~(어느 꼴이 펼쳐지는지는 unquoted_expansion)
-SHELL_EXPANDS = set('*?[{}~')
-# 큰따옴표 안에서 읽어도 되는 변수 — 시스템이 정하는 값이라 비밀값이 아닌 것만(그 밖 $이름 은 환경 변수의 비밀값이 나올 수 있다).
-# 숫자(위치 인자 — ssh 원격 셸에서는 비었다) · ? 종료 코드 · # 인자 수. $_ 는 앞 명령의 마지막 인자라 이름 검사를 비켜 가니 없다.
-# PWD · OLDPWD 는 cd 에 따라 값이 바뀌어("cd ~/.kube; cat "$PWD/config"") 이름 검사로 볼 수 없으니 없다(2026-11-25 PR 리뷰)
-SHELL_VARS = {'HOME', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME', 'HOSTTYPE', 'OSTYPE', 'MACHTYPE', 'PATH', 'LANG',
-              'TERM', 'UID', 'EUID', 'PPID', 'SHLVL', 'TMPDIR', 'XDG_RUNTIME_DIR', 'BASH_VERSION'}
-SIMPLE_VAR = re.compile(r'\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*)|([0-9?#])')
-# 셸이 변수를 펼치기 시작하는 글자 — $ 뒤가 이 밖이면 $ 는 글자 그대로
-DOLLAR_STARTS = set('{([@*#?-$!') | set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789')
-# 허용한 변수 자리 — 값을 모르는 글자 하나(사용자 영역 글자 · 원문에 있으면 막는다)
-VAR = '\ue000'
+# 값을 보이면 비밀값이 나올 수 있는 변수 이름(따옴표 밖 · 큰따옴표 안의 $이름 · ${이름})
+SECRET_VAR = re.compile(r'TOKEN|SECRET|PASSW|PASSPHRASE|API_?KEY|PRIVATE|CREDENTIAL|AUTH', re.IGNORECASE)
 
-SEPARATORS = {';', '&&', '||', '|', '|&'}
+SEPARATORS = {';', '&&', '||', '|', '|&', '&', '(', ')', ';;', '((', '))'}
 WRITE_REDIRECTS = {'>', '>>', '>|', '&>', '&>>'}
+# 명령 자리에 오는 셸 낱말 — 건너뛰고 다음 낱말이 명령
+KEYWORDS = {'{', '}', '!', 'if', 'then', 'else', 'elif', 'fi', 'while', 'until', 'do', 'done', 'for', 'case', 'esac', 'in', 'time', 'coproc'}
+# 셸 · 감싸기 안을 다시 보는 깊이
+DEPTH_MAX = 6
 
-
-def spec(flags='', args='', long='', digits=False, most=None):
-    """허용 옵션 — flags 값 없는 짧은 옵션 글자 · args 값을 받는 글자 · long 긴 옵션(이름= 은 값을 받는다 · 이름[=] 은 = 로만 값)
-    digits: -20 같은 숫자 옵션 · most: 이름 인자 최대 수(None 이면 제한 없음)"""
-    table = {}
-    for word in long.split():
-        if word.endswith('[=]'):
-            table[word[:-3]] = 2
-        elif word.endswith('='):
-            table[word[:-1]] = 1
-        else:
-            table[word] = 0
-    return {'flags': flags, 'args': args, 'long': table, 'digits': digits, 'most': most}
-
-
-# 옵션이 위험할 수 있는 명령 — 옵션은 여기 적은 것만(끝없이 도는 -c · -s 반복 · 시각 · 이름 바꾸기 · 다른 데몬 연결은 뺐다)
-SPECS = {
-    'free': spec('bkmghltwv', long='--bytes --kilo --mega --giga --human --wide --total --si --lohi'),
-    'netstat': spec('tulpnaeirsWvxw', long='--tcp --udp --listening --programs --numeric --all --extend --interfaces --route --statistics --wide'),
-    'lsof': spec('nPltVbwR', 'ipuctsgd'),
-    'vmstat': spec('asdDwtfmn', 'S', most=2),
-    'iostat': spec('xcdkmhtNzy', 'p', most=2),
-    'last': spec('naFxwiR', 'nst', digits=True),
-    'ping': spec('nq46', 'cWwiIs'),
-    'hostname': spec('IifsdAa', long='--all-ip-addresses --ip-address --fqdn --short --domain --all-fqdns', most=0),
-    'date': spec('uRI', 'dr', '--utc --rfc-2822 --iso-8601[=] --rfc-3339= --date= --reference='),
-    'hostnamectl': spec(most=1),
-    'timedatectl': spec(most=1),
-    'journalctl': spec('kqraexmb', 'nouptSUg', '--no-pager --no-hostname --reverse --utc --quiet --list-boots --disk-usage --catalog --merge --all --dmesg --pager-end --boot[=] --lines[=] --unit= --since= --until= --priority= --output= --identifier= --grep= --user-unit= --namespace= --user --version', digits=True),
-    # -p · -P · --property 는 show 의 칸 고르기(Environment 는 check_sub 가 막는다) · -H/--host · -M 은 없다(다른 기계)
-    # --user 는 내 사용자 서비스 관리자(같은 기계 · 하위 명령 판정은 그대로) · --version 은 판만
-    'systemctl': spec('alq', 'tnopP', '--no-pager --no-legend --plain --all --failed --full --quiet --value --user --version --type= --state= --lines= --output= --property='),
-    # loginctl — 사용자 · 세션 보기만(2026-11-25 사용자 결정 · show-user -p Linger 가 확인으로 떴다) · -H/--host · -M 은 없다(다른 기계)
-    # show 칸에는 Environment 같은 비밀값 칸이 없다 · *-status 는 systemctl status 처럼 프로세스 줄을 보인다(같은 수준)
-    'loginctl': spec('al', 'pPno', '--no-pager --no-legend --all --full --value --property= --lines= --output= --version'),
-    'docker': spec('aqsltv', 'np', '--all --quiet --no-trunc --no-stream --timestamps --digests --size --latest --verbose --format= --filter= --tail= --since= --until= --project-name='),
-    'pm2': spec(long='--nostream --raw --err --out --no-color --lines='),
-    'apt': spec('a', long='--installed --upgradable --all-versions'),
-    'npm': spec('agl', long='--all --json --long --global --parseable --prod --production --depth='),
-    'caddy': spec(long='--pretty --config= --adapter='),
-    # podman — docker 읽기 중 상태 칸에 필요한 것만(logs · compose 는 뺐다 — podman logs -n 은 docker 와 뜻이 다르고 compose 는 바깥 도구를 부른다)
-    'podman': spec('aqsltv', 'n', '--all --quiet --no-trunc --no-stream --size --latest --format= --filter='),
+POWER = {'reboot', 'shutdown', 'poweroff', 'halt', 'init', 'telinit', 'kexec'}
+SYSTEMCTL_POWER = {'reboot', 'poweroff', 'halt', 'kexec', 'soft-reboot', 'suspend', 'hibernate', 'hybrid-sleep', 'suspend-then-hibernate', 'rescue', 'emergency'}
+DISK = {'dd', 'umount', 'wipefs', 'gdisk', 'cfdisk', 'mkswap', 'swapoff', 'losetup'}
+# 목록 보기 옵션이 있으면 바로인 디스크 도구
+DISK_LIST = {'fdisk': {'-l', '--list'}, 'sfdisk': {'-l', '--list'}, 'parted': {'-l', '--list'}}
+USERS = set('useradd userdel usermod passwd visudo sudoedit vipw vigr chpasswd chage adduser deluser addgroup delgroup '
+            'groupadd groupdel groupmod gpasswd'.split())
+IPTABLES = {'iptables', 'ip6tables', 'iptables-legacy', 'ip6tables-legacy', 'iptables-nft', 'ip6tables-nft'}
+# iptables 보기 꼴 — 이 낱말 · 표 이름만
+IPTABLES_READ = {'-L', '-S', '-n', '-v', '-x', '--list', '--list-rules', '--line-numbers', '--numeric', '--verbose', '--exact', '-t', '--table',
+                 'filter', 'nat', 'mangle', 'raw', 'security', 'INPUT', 'OUTPUT', 'FORWARD', 'PREROUTING', 'POSTROUTING'}
+FIREWALL_READ = ('--list', '--get', '--query', '--state', '--version', '--info', '--zone', '--permanent')
+# 쓰는 곳이 목적지 하나인 명령(원본은 읽기) — 마지막 이름 인자 · -t 폴더
+COPY_LIKE = {'cp', 'install', 'ln', 'rsync'}
+# 이름 인자 모두를 쓰는 곳으로 보는 명령
+WRITERS = {'mv', 'tee', 'touch', 'mkdir', 'rm', 'rmdir', 'unlink', 'shred', 'truncate', 'chmod', 'chown', 'chgrp', 'chattr', 'setfacl', 'patch'}
+# 벗겨 낼 감싸기 — 값을 받는 옵션 글자(짧은 옵션)
+WRAPPERS = {
+    'sudo': 'ugpCDrtUhRT', 'doas': 'uC', 'nohup': '', 'nice': 'n', 'ionice': 'cnpP', 'timeout': 'sk', 'stdbuf': 'ioe',
+    'setsid': '', 'exec': 'a', 'command': '', 'builtin': '', 'xargs': 'adEeIiLlnPs', 'watch': 'nqd', 'chrt': 'p', 'taskset': 'c',
+    'unbuffer': '', 'flock': 'wEc', 'caffeinate': 'w', 'busybox': '',
 }
-# 하위 명령까지 정한 것 — 첫 이름 인자가 이 안에 있어야. systemctl show 는 -p 로 칸을 골라야(check_sub) · daemon-reload 는 바로(2026-11-11)
-SUBCOMMANDS = {
-    'systemctl': {'status', 'list-units', 'list-unit-files', 'list-timers', 'list-sockets', 'list-dependencies', 'list-jobs', 'is-active', 'is-enabled', 'is-failed', 'is-system-running', 'get-default', 'cat', 'show', 'daemon-reload'},
-    'docker': {'ps', 'logs', 'images', 'stats', 'version', 'info', 'top', 'port', 'compose', 'network', 'volume', 'container', 'image', 'system'},
-    'pm2': {'ls', 'list', 'status', 'logs'},
-    'apt': {'list'},
-    'npm': {'ls', 'list'},
-    'caddy': {'version', 'validate', 'list-modules', 'adapt'},
-    'podman': {'ps', 'stats', 'images', 'version', 'info', 'top', 'port', 'container', 'image', 'system', 'network', 'volume'},
-    'hostnamectl': {'status'},
-    'timedatectl': {'status'},
-    # enable-linger · terminate-* · kill-* · lock-* · attach · flush-devices 같은 쓰기는 이 밖이라 확인
-    'loginctl': {'list-users', 'list-sessions', 'list-seats', 'show-user', 'show-session', 'show-seat', 'user-status', 'session-status', 'seat-status'},
-}
-# docker 의 둘째 단 — compose ps · network ls …
-DOCKER_SECOND = {
-    'compose': {'ps', 'logs', 'ls', 'images', 'top', 'version'},
-    'network': {'ls'}, 'volume': {'ls'}, 'container': {'ls', 'logs', 'top', 'port'}, 'image': {'ls'}, 'system': {'df', 'info'},
-}
-# 글자 하나로 정해진 명령 — 인자 목록이 이 중 하나와 똑같아야
-EXACT = {
-    'node': [['-v'], ['--version']],
-    'python3': [['--version'], ['-V']],
-    'python': [['--version'], ['-V']],
-    'crontab': [['-l'], ['-l', '-u', None], ['-u', None, '-l']],
-    'service': [['--status-all'], [None, 'status']],
-    'ufw': [['status'], ['status', 'verbose'], ['status', 'numbered']],
-    'nginx': [['-t'], ['-T'], ['-v'], ['-V'], ['-t', '-q']],
-    # supervisorctl status 만 — 명령 인자를 주면 비대화라 인증을 묻지 않는다(supervisor supervisorctl.py onecmd 의 401 갈래)
-    'supervisorctl': [['status']],
-}
-# podman 의 둘째 단 — docker 와 같되 compose · logs 는 없다
-PODMAN_SECOND = {
-    'network': {'ls'}, 'volume': {'ls'}, 'container': {'ls', 'top', 'port'}, 'image': {'ls'}, 'system': {'df', 'info'},
-}
-# kubectl get 의 자원 — 표 출력(기본 · -o wide)만. secrets · configmaps · 그 밖 자원 · 쉼표 묶음 · 자원/이름 꼴은 막는다
-KUBECTL_RESOURCES = {'pods', 'pod', 'po', 'deployments', 'deployment', 'deploy', 'nodes', 'node', 'no', 'statefulsets', 'statefulset', 'sts', 'daemonsets', 'daemonset', 'ds'}
-# -o 는 wide 만(json · yaml · jsonpath · go-template · custom-columns 는 파드 spec 의 env 값이 나온다) · 앞 옵션(--kubeconfig · --server · --token …)은 없다
-KUBECTL_GET = spec('A', 'no', '--all-namespaces --no-headers --namespace= --output= --request-timeout=')
-SLEEP_MAX = 5
-# sar — 저장된 하루 기록 읽기만(-u CPU · -q 부하 · -r 메모리 · -S 스왑 · -W 스왑 드나듦 · -n DEV 네트워크). -o(파일 쓰기)는 없다 · -f 는 /var/log/sysstat/saNN 만
-SAR = spec('uqrSW', 'nfse')
-SAR_FILE = re.compile(r'/var/log/sysstat/sa\d\d')
-SAR_TIME = re.compile(r'\d\d:\d\d(:\d\d)?')
-# sar 앞에만 붙일 수 있는 환경 값 — 행 시각을 로케일(%X · 오전/오후) 대신 HH:MM:SS 로(sysstat sa_common.c set_record_timestamp_string)
-SAR_ENV = 'S_TIME_FORMAT=ISO'
-# find 의 조건 — 값 없는 것 · 값 하나를 받는 것(-fprint 는 파일 쓰기라 없다 · -delete 는 위험 표 · -exec 는 다른 명령)
-FIND_FLAGS = {'-print', '-print0', '-ls', '-empty', '-xdev', '-mount', '-readable', '-executable', '-writable', '-not', '!', '-a', '-o', '-and', '-or', '-prune', '-true', '-false', '-L', '-H', '-P', '-depth'}
-FIND_ARGS = {'-name', '-iname', '-path', '-ipath', '-wholename', '-type', '-mtime', '-mmin', '-atime', '-amin', '-ctime', '-cmin', '-size', '-maxdepth', '-mindepth', '-newer', '-user', '-group', '-perm', '-regex', '-iregex', '-links', '-samefile', '-printf', '-uid', '-gid'}
-FIND_RUNS = {'-exec', '-execdir', '-ok', '-okdir'}
-IP_OPTIONS = {'-br', '-brief', '-4', '-6', '-s', '-stats', '-c', '-color', '-d', '-details', '-j', '-json', '-p', '-pretty', '-o', '-oneline'}
-IP_OBJECTS = {'a', 'addr', 'address', 'r', 'route', 'link', 'l', 'n', 'neigh', 'rule'}
-IP_ACTIONS = {'show', 'list', 'ls', 'lst', 'get'}
-IPTABLES_WORDS = {'-L', '-S', '-n', '-v', '--list', '--line-numbers', '-t', 'filter', 'nat', 'mangle', 'raw'}
-# ps 의 BSD 꼴(대시 없는 aux) — e(환경 변수 보이기) · o(형식 값)는 없다
-PS_BSD = set('auxwfjlrcSTh')
-PS = spec('aAdefFlwHjLTMyNx', 'oOpuUgGtCsq', '--sort= --no-headers --forest --headers --format= --pid= --ppid= --user= --cols= --width=')
-
-
-def free(ban='', long='', values='', out='', why=''):
-    """옵션 자유 명령 — ban 막는 짧은 글자 · long 막는 긴 옵션(GNU 줄임 --fol 도 막는다) · values 값을 받는 짧은 글자(그 뒤 글자는 값)
-    out 쓰는 곳을 값으로 받는 짧은 글자(-o/etc/x 처럼 붙여 쓴 것까지 본다) · why 막는 이유"""
-    return {'ban': ban, 'long': tuple(long.split()), 'values': values, 'out': out, 'why': why}
-
-
-GREP_FREE = free('rRd', '--recursive --dereference-recursive --directories', 'efmABCDd', why='재귀 — 비밀 파일까지 읽는다')
-# 옵션 자유 — 읽기 · 쓰기 도구. 쓰기(WRITERS)는 쓰는 곳이 보호 경로 · 비밀값이 아니어야
-FREE = {name: free() for name in '''ls stat file wc du df uname whoami id groups pgrep pidof lsblk findmnt lscpu nproc uptime w who
-    basename dirname readlink realpath which type true echo printf cut tr column getent dig nslookup host lsb_release pwd
-    cat head zcat md5sum sha1sum sha256sum sha512sum cksum tac nl cmp comm paste join od strings xxd hexdump
-    mkdir touch tee uniq test'''.split()}
-FREE.update({
-    'tail': free('fF', '--follow', 'ncs', why='끝없이 돈다'),
-    'grep': GREP_FREE, 'egrep': GREP_FREE, 'fgrep': GREP_FREE, 'zgrep': GREP_FREE,
-    'diff': free('r', '--recursive', 'UFIxXSWCDL', why='재귀 — 비밀 파일까지 읽는다'),
-    'sort': free('', '--compress-program', 'kStTo', 'o', why='다른 명령을 돌린다'),
-    'tree': free('R', '', 'LPIoHT', 'o', why='폴더마다 파일을 쓴다'),
-    'ss': free('KD', '--kill --diag', 'AfFDN', why='연결 끊기 · 파일 쓰기'),
-    'cp': free('', '', 'tS', 't'),
-    # printf -v 는 변수에 넣는다 — 다음 명령의 "$HOME" 이 이름 검사를 비켜 간다(SHELL_VARS)
-    'printf': free('v', why='변수에 넣는다'),
-})
-# 이름 인자를 쓰는 곳으로 보는 것(cp 원본 · uniq 입력까지 — 넉넉히) — 보호 경로면 확인
-WRITERS = {'cp', 'tee', 'touch', 'mkdir', 'sort', 'uniq', 'tree', 'xxd'}
-
-# 쓰면 확인할 보호 경로 — 장치 · 커널 · 부팅 · 권한 · 사용자 · 로그인 · 크론 · 디스크 표(/dev/null · stdout · stderr 는 된다)
-PROTECTED = re.compile(
-    r'^/(dev/(?!(null|stdout|stderr)$)|(proc|sys|boot)(/|$)|var/spool/cron(/|$)'
-    r'|etc/((passwd|shadow|group|gshadow|anacrontab|fstab|ld\.so\.preload)$|(sudoers[^/]*|cron[^/]*|pam\.d|ssh|security)(/|$)))'
-)
-PROTECTED_NAMES = {'sudoers', 'passwd', 'shadow', 'group', 'gshadow', 'crontab', 'anacrontab', 'fstab', 'ld.so.preload'}
-# 다음에 실행되는 자리 — 로그인 · 부팅 · 서비스 시작 · 다른 명령 실행 때 그 파일이 돈다(2026-11-11 보안 검토 중간 1 · 아테나 지시)
-RUN_SPOTS = re.compile(
-    r'^/(etc/((profile|bash\.bashrc|environment|rc\.local|hosts|resolv\.conf)$|(profile\.d|rc[^/]*\.d|init\.d|systemd|apt)(/|$)'
-    r'|ld\.so\.conf[^/]*(/|$)|sysctl[^/]*(/|$)'
-    r'|(update-motd\.d|logrotate\.d|network/if-[^/]*\.d|NetworkManager/dispatcher\.d|udev/rules\.d|modprobe\.d|xdg/autostart)(/|$)|default/grub$)'
-    r'|(usr/)?lib/systemd(/|$)|usr/local/s?bin(/|$)|usr/s?bin(/|$)|s?bin(/|$)|lib(/|$))'
-)
-RUN_NAMES = {'.bashrc', '.bash_profile', '.profile', '.zshrc', '.gitconfig', '.vimrc'}
-
-# 위험 표 — 여기 든 명령은 확인([작업] 요청). 읽기 꼴(READ_FORMS)만 바로 — apt list · dpkg -l · ufw status · crontab -l · iptables -L …
-DANGER_KINDS = {
-    '서비스 켜기 · 끄기 · 재시작': 'kill pkill killall service supervisorctl pm2',
-    '삭제': 'rm rmdir unlink shred truncate',
-    '설치 · 제거': 'apt apt-get aptitude dpkg yum dnf rpm snap pip pip3 npm npx pnpm yarn gem flatpak',
-    '권한 · 사용자': 'chmod chown chgrp chattr setfacl useradd userdel usermod groupadd groupdel groupmod gpasswd passwd chpasswd chage visudo sudoedit adduser deluser addgroup delgroup',
-    '재부팅 · 종료': 'reboot shutdown poweroff halt init telinit',
-    '디스크': 'dd mount umount fdisk parted sfdisk gdisk cfdisk wipefs mkswap swapon swapoff losetup',
-    '방화벽': 'ufw iptables ip6tables iptables-restore ip6tables-restore nft firewall-cmd',
-    '크론': 'crontab',
-}
-DANGER_NAMES = {name: kind for kind, names in DANGER_KINDS.items() for name in names.split()}
-READ_FORMS = {'apt', 'dpkg', 'npm', 'ufw', 'iptables', 'crontab', 'service', 'supervisorctl', 'pm2'}
-SERVICE_KIND = '서비스 켜기 · 끄기 · 재시작'
-SYSTEMCTL_DANGER = dict.fromkeys(
-    'start stop restart reload try-restart reload-or-restart try-reload-or-restart force-reload condrestart enable disable reenable '
-    'mask unmask preset preset-all isolate kill clean freeze thaw set-property revert edit link set-default set-environment '
-    'unset-environment import-environment daemon-reexec switch-root'.split(), SERVICE_KIND)
-SYSTEMCTL_DANGER.update(dict.fromkeys('reboot poweroff halt suspend hibernate hybrid-sleep kexec emergency rescue default soft-reboot'.split(), '재부팅 · 종료'))
-CONTAINER_DANGER = {'restart', 'stop', 'start', 'kill', 'rm', 'rmi', 'run', 'create', 'exec', 'pause', 'unpause', 'update', 'prune', 'up', 'down'}
-CONTAINER_DANGER_SECOND = {
-    'compose': {'up', 'down', 'restart', 'stop', 'start', 'rm', 'kill', 'run', 'exec', 'create', 'pause', 'unpause', 'build', 'pull'},
-    'container': {'rm', 'prune', 'stop', 'start', 'restart', 'kill', 'run', 'create', 'exec', 'pause', 'unpause', 'update'},
-    'image': {'rm', 'prune'}, 'volume': {'rm', 'prune'}, 'network': {'rm', 'prune'}, 'system': {'prune'},
-}
-KUBECTL_DANGER = {'delete': '삭제', **dict.fromkeys('apply create scale rollout edit patch replace drain cordon uncordon set run exec'.split(), SERVICE_KIND)}
-REMOVE_WORDS = {'rm', 'rmi', 'prune', 'down'}
-
-# 다른 명령을 돌리는 것 — 안에 든 명령을 판정하지 못하니 확인(env · printenv 는 환경 변수도 보인다)
-RUNNERS = set('''sh bash zsh dash ksh fish csh tcsh eval exec source . xargs env printenv nohup timeout watch nice ionice stdbuf
-    setsid su runuser chroot nsenter unshare ssh scp sftp rsync awk gawk mawk nawk perl python python3 node ruby php expect
-    screen tmux at batch make jq time strace ltrace gdb busybox parallel flock script sg newgrp doas pkexec'''.split())
-
-# git — 읽기 하위 명령만 · 옵션은 자유이되 파일 쓰기 · 바깥 명령 돌리기 옵션은 막는다(GNU 줄임까지)
-GIT_READ = {'status', 'log', 'branch', 'rev-parse', 'describe', 'show', 'tag', 'ls-files', 'diff', 'merge-base', 'rev-list', 'show-ref',
-            'blame', 'shortlog', 'cat-file', 'ls-tree', 'grep', 'reflog', 'stash', 'worktree', 'count-objects', 'for-each-ref', 'name-rev', 'cherry',
-            'remote'}
-# git remote — 목록 · get-url · show 만(2026-11-25 사용자 결정 · remote -v 가 확인으로 떴다). add · remove · rename · set-url · prune 은 확인
-GIT_REMOTE = {'get-url': {'--push', '--all'}, 'show': {'-n'}}
-GIT_BANS = ('--output', '--open-files-in-pager', '--upload-pack', '--receive-pack', '--exec', '--ext-diff', '--textconv', '--config-env')
-# branch · tag 는 목록만 — 이 옵션 밖(-d · -m · -f · 만들기)은 확인
-GIT_LIST = {
-    'branch': spec('arvl', long='--all --remotes --verbose --list --show-current --no-color --color[=] --column[=] --no-column --abbrev= --contains= --no-contains= --merged= --no-merged= --sort= --format= --points-at='),
-    'tag': spec('l', 'n', '--list --no-color --color[=] --column[=] --no-column --contains= --no-contains= --merged= --no-merged= --sort= --format= --points-at=', digits=True),
-}
-
-# sed — 옵션 · 스크립트 명령. e 명령 · s///e 는 셸을 돌린다 · w 는 파일 쓰기 · r 은 파일 읽기
-SED_FLAGS = set('nErszu')
-SED_LONG = {'--quiet', '--silent', '--regexp-extended', '--posix', '--sandbox', '--null-data', '--separate', '--unbuffered', '--debug', '--follow-symlinks'}
-SED_SIMPLE = set('=dDgGhHnNpPxzF{}')
+# 첫 이름 인자를 하나 더 건너뛰는 감싸기(timeout <시간> · chroot <폴더> · flock <파일> · chrt <우선순위> · taskset <마스크>)
+WRAPPER_FIRST = {'timeout': 1, 'chroot': 1, 'flock': 1, 'chrt': 1, 'taskset': 1}
+# .ssh 폴더 아래 이름을 줘도 바로인 명령 — 목록 · 정보 보기만(cat · tar · cp 로 키를 읽는 것은 묻는다)
+SSH_LISTERS = {'ls', 'stat', 'du', 'find', 'file', 'test', '[', 'namei', 'realpath', 'readlink', 'tree', 'mkdir', 'chmod', 'chown', 'ssh-keygen'}
+SHELLS = {'sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'fish', 'csh', 'tcsh', 'su', 'runuser'}
 
 
 def secret_arg(arg):
@@ -276,279 +99,40 @@ def secret_arg(arg):
     return bool(SECRET_NAME.match(name)) and not EXAMPLE_NAME.match(name)
 
 
-def parse(name, args, rule):
-    """허용 옵션 목록으로 낱말을 가른다 — (이유 | None, 이름 인자[], [(옵션, 값)])"""
-    plain, values, index, ended = [], [], 0, False
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        if ended or arg == '-' or not arg.startswith('-'):
-            plain.append(arg)
-            continue
-        if arg == '--':
-            ended = True
-            continue
-        if arg.startswith('--'):
-            option, has_value, value = arg.partition('=')
-            kind = rule['long'].get(option)
-            if kind is None:
-                return f'{name} {option}(허용 옵션이 아니다)', plain, values
-            if kind == 0 and has_value:
-                return f'{name} {option} 는 값을 받지 않는다', plain, values
-            if kind == 1 and not has_value:
-                if index >= len(args):
-                    return f'{name} {option} 값이 없다', plain, values
-                value, index = args[index], index + 1
-            if kind == 1 or has_value:
-                values.append((option, value))
-            continue
-        if rule['digits'] and re.fullmatch(r'-\d+', arg):
-            continue
-        letters, position = arg[1:], 0
-        while position < len(letters):
-            letter = letters[position]
-            position += 1
-            if letter in rule['args']:
-                value = letters[position:]
-                if not value:
-                    if index >= len(args):
-                        return f'{name} -{letter} 값이 없다', plain, values
-                    value, index = args[index], index + 1
-                values.append((f'-{letter}', value))
-                break
-            if letter not in rule['flags']:
-                return f'{name} -{letter}(허용 옵션이 아니다)', plain, values
-    if rule['most'] is not None and len(plain) > rule['most']:
-        return f'{name} 이름 인자가 많다(쓰기 · 바꾸기)', plain, values
-    return None, plain, values
+# 비밀 파일 이름 보기 — glob(.e* · *.pem · .{a,b})이 이 이름에 맞으면 묻는다(* · .* 처럼 글자 없는 glob · *.json 같은 흔한 꼴은 빼고)
+SECRET_SAMPLES = ('.env', '.env.local', '.env.production', 'id_rsa', 'id_ed25519', 'id_ecdsa', '.npmrc', '.pgpass', '.netrc',
+                  '.git-credentials', 'credentials', 'secret', 'authorized_keys', 'shadow',
+                  'server.key', 'server.pem', 'cert.p12', 'environ')
+# 낱말에 붙인 변수($1 · "$_" · ${X}) — 지우고 다시 본다(.e"$1"nv → .env)
+SHELL_VAR = re.compile(r'\$(\{[^}]*\}|[A-Za-z_]\w*|[0-9@*#?$!_-])')
 
 
-def check_exact(name, args):
-    for shape in EXACT[name]:
-        if len(shape) == len(args) and all(want is None and not arg.startswith('-') or want == arg for want, arg in zip(shape, args)):
-            return None
-    return f'{name} {" ".join(args)}'.strip() + '(읽기 꼴이 아니다)'
+def glob_secret(piece):
+    """마지막 조각이 비밀 이름에 맞는 glob 이면 참 — 중괄호는 펼쳐서"""
+    name = piece.rstrip('/').rsplit('/', 1)[-1]
+    if not re.search(r'[*?\[{]', name) or not re.sub(r'[*?\[\]{},.]', '', name):
+        return False
+    match = re.search(r'\{([^{}]*)\}', name)
+    names = [name[:match.start()] + each + name[match.end():] for each in match.group(1).split(',')] if match else [name]
+    return any(fnmatch.fnmatchcase(sample, each) for each in names for sample in SECRET_SAMPLES if re.search(r'[*?\[]', each) or each == sample)
 
 
-def var_secret(arg, cwds=None):
-    """변수(VAR) 자리를 / 로도 · 빈 글자로도 넣어 비밀 이름을 본다 — "$HOME"/.env 는 / 로, .e"$1"nv · id_"$1"rsa 는
-    값이 비면 .env · id_rsa 가 된다($1 · $? 는 빌 수 있다 — 2026-11-25 보안 검토). 상대 경로는 cd 한 곳에 붙여서도 본다"""
-    for filled in (arg.replace(VAR, '/'), arg.replace(VAR, '')):
-        bad = secret_piece(filled) or cwd_secret(filled, cwds)
-        if bad:
-            return bad
-    return None
-
-
-def cwd_secret(arg, cwds):
-    """상대 경로를 cd 로 갈 수 있는 곳(cwds)마다 붙여 비밀 경로를 본다 — cd ~/.kube; cat config(2026-11-25 PR 리뷰).
-    간 곳을 모르면('?') SECRET_DIRS 아래로 넣어 본다 — 비밀 이름이면 그 조각 · 아니면 None"""
-    if not arg or arg.startswith(('/', '~', '-')):
-        return None
-    for base in cwds or ():
-        for prefix in SECRET_DIRS if base == '?' else (base,):
-            if secret_arg(posixpath.join(prefix, arg)):
-                return posixpath.join(prefix, arg)
-    return None
-
-
-def secret_piece(arg):
-    """낱말 · 그 안의 공백 조각(sed 스크립트 '1r /x/.env' 같은 것)에서 비밀값 이름 — 없으면 None"""
-    for piece in [arg] + (arg.split() if len(arg.split()) > 1 else []):
-        if secret_arg(piece):
-            return re.split(r'[/:=]', piece.rstrip('/'))[-1]
-    return None
-
-
-def short_letters(arg, values):
-    """짧은 옵션 묶음(-uo/x)에서 값 앞의 글자들 · 값을 받는 글자 · 붙은 값 — (글자[], 값 글자 | '', 붙은 값)"""
-    letters = arg[1:]
-    for position, letter in enumerate(letters):
-        if letter in values:
-            return list(letters[:position]), letter, letters[position + 1:]
-    return list(letters), '', ''
-
-
-def normal_abs(path):
-    """절대 경로를 접는다 — //etc · /etc/./x · /tmp/../etc(posixpath 는 // 로 시작하면 그대로 둔다)"""
-    return '/' + posixpath.normpath(path).lstrip('/')
-
-
-def join_cwd(base, target):
-    """cd 뒤 갈 수 있는 곳 — '~' 홈 · '?' 모름. 상대 cd 는 CDPATH 가 다른 곳으로 보낼 수 있어 ./ · ../ 꼴만 잇는다"""
-    if target.startswith('/'):
-        return normal_abs(target)
-    if base in ('~', '?') or not (target in ('.', '..') or target.startswith(('./', '../'))):
-        return '?'
-    return normal_abs(posixpath.join(base, target))
-
-
-def guarded(full, run_spots):
-    return bool(PROTECTED.match(full) or run_spots and RUN_SPOTS.match(full))
-
-
-def protected_path(path, cwds=None, run_spots=True):
-    """쓰면 확인할 보호 경로면 이유 — 상대 경로는 cd 로 갈 수 있는 곳(cwds) 모두에서 본다. None 이면 홈.
-    run_spots 가 거짓이면(mkdir) 다음에 실행되는 자리(RUN_SPOTS · 셸 rc)는 보지 않는다"""
-    if not path:
-        return '쓰는 곳이 비었다'
-    parts = path.split('/')
-    if '.ssh' in parts or posixpath.basename(path.rstrip('/')) in PROTECTED_NAMES:
-        return f'보호 경로({path})'
-    if run_spots and (posixpath.basename(path.rstrip('/')) in RUN_NAMES or '.config/systemd' in path):
-        return f'다음에 실행되는 자리({path})'
-    if path.startswith('/'):
-        return f'보호 경로({path})' if guarded(normal_abs(path), run_spots) else None
-    for base in cwds or {'~'}:
-        if base == '?':
-            return f'cd 로 간 곳을 모르는 상대 경로({path})'
-        if base == '~':
-            if '..' in parts:
-                return f'홈 밖을 가리킬 수 있는 상대 경로({path})'
-            continue
-        if guarded(normal_abs(posixpath.join(base, path)), run_spots):
-            return f'보호 경로({posixpath.join(base, path)})'
-    return None
-
-
-def check_free(name, args, cwds):
-    """옵션 자유 명령 — 막는 옵션만 보고, 쓰기 명령은 이름 인자 · 옵션 값 · 붙여 쓴 쓰는 곳을 모두 보호 경로와 견준다"""
-    rule = FREE[name]
-    targets, index, ended = [], 0, False
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        if ended or arg == '-' or not arg.startswith('-'):
-            targets.append(arg)
-            continue
-        if arg == '--':
-            ended = True
-            continue
-        if arg.startswith('--'):
-            option, has_value, value = arg.partition('=')
-            if len(option) > 2 and any(banned.startswith(option) for banned in rule['long']):
-                return f'{name} {option}({rule["why"]})'
-            if has_value:
-                targets.append(value)
-            continue
-        letters, letter, value = short_letters(arg, rule['values'])
-        bad = next((each for each in letters if each in rule['ban']), None)
-        if bad or letter and letter in rule['ban']:
-            return f'{name} -{bad or letter}({rule["why"]})'
-        if letter in rule['out'] and letter and value:
-            targets.append(value)
-    if name == 'cp':
-        reason, landed = cp_landing(args)
-        if reason:
-            return reason
-        targets += landed
-    if name in WRITERS:
-        for target in targets:
-            why = protected_path(target, cwds, run_spots=name != 'mkdir')
-            if why:
-                return f'{name} 쓰기 — {why}'
-    return None
-
-
-def cp_landing(args):
-    """cp 가 실제로 쓰는 곳 — 목적지가 폴더면 폴더 + 원본 이름(cp /tmp/rc.local /etc → /etc/rc.local · -t 폴더도).
-    재귀(-r · -R · -a · --recursive · --archive) · 원본 경로째(--parents)는 하위에 생길 경로를 다 판정 못 하니 확인(2026-11-11 자동 리뷰 #287)"""
-    names, folder, index, ended = [], None, 0, False
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        if ended or arg == '-' or not arg.startswith('-'):
-            names.append(arg)
-            continue
-        if arg == '--':
-            ended = True
-            continue
-        if arg.startswith('--'):
-            option, _, value = arg.partition('=')
-            if len(option) > 2 and ('--recursive'.startswith(option) or '--archive'.startswith(option)):
-                return f'cp {option}(재귀 복사 — 하위에 생길 경로를 다 판정 못 한다)', []
-            if len(option) > 3 and '--parents'.startswith(option):
-                # 원본 경로를 목적지 아래에 그대로 만든다(cp --parents ssh/sshd_config /etc → /etc/ssh/sshd_config) — 2026-11-11 보안 재검토
-                return f'cp {option}(원본 경로째 복사 — 실제 쓰는 곳을 다 판정 못 한다)', []
-            if len(option) > 3 and '--target-directory'.startswith(option):
-                if not value and index < len(args):
-                    value = args[index]
-                    index += 1
-                folder = value
-            continue
-        letters, letter, value = short_letters(arg, 'tS')
-        recursive = next((each for each in letters if each in 'rRa'), None)
-        if recursive:
-            return f'cp -{recursive}(재귀 복사 — 하위에 생길 경로를 다 판정 못 한다)', []
-        if letter and not value and index < len(args):
-            value = args[index]
-            index += 1
-        if letter == 't':
-            folder = value
-    if folder is None:
-        if len(names) < 2:
-            return None, []
-        folder, names = names[-1], names[:-1]
-    landed = [posixpath.join(folder, posixpath.basename(posixpath.normpath(source))) for source in names]
-    return None, landed + [folder]
-
-
-def check_find(args):
-    index, seen_test = 0, False
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        if arg in FIND_RUNS:
-            return f'다른 명령을 돌린다(find {arg})'
-        if arg in FIND_FLAGS:
-            seen_test = seen_test or arg not in ('-L', '-H', '-P')
-            continue
-        if arg in FIND_ARGS:
-            if index >= len(args):
-                return f'find {arg} 값이 없다'
-            index += 1
-            seen_test = True
-            continue
-        if arg.startswith('-') or seen_test:
-            return f'find {arg}(허용 조건이 아니다)'
-    return None
-
-
-def check_curl(args, cwds):
-    """GET · HEAD 만 — -s -S -I -L -f -k -i -v -O · -o <파일> · -w 형식 · 시간 제한 · http(s) 주소. 받은 파일 쓰는 곳은 보호 경로가 아니어야"""
-    rule = spec('sSILfkivO', 'owmX', '--silent --show-error --head --location --fail --insecure --include --compressed --verbose --remote-name --output= --write-out= --max-time= --connect-timeout= --request= --url=')
-    reason, plain, values = parse('curl', args, rule)
-    if reason:
-        return reason
-    urls = list(plain)
-    for option, value in values:
-        if option in ('-o', '--output') and value != '/dev/null':
-            why = protected_path(value, cwds)
-            if why:
-                return f'curl {option} — {why}'
-        if option in ('-X', '--request') and value.upper() not in ('GET', 'HEAD'):
-            return f'curl {option} {value}(GET · HEAD 만)'
-        if option in ('-w', '--write-out') and (value.startswith('@') or 'output' in value.lower() or 'stderr' in value.lower()):
-            return 'curl -w 의 @파일 · %output(파일 쓰기)'
-        if option in ('-m', '--max-time', '--connect-timeout') and not re.fullmatch(r'\d+(\.\d+)?', value):
-            return f'curl {option} 는 숫자만'
-        if option == '--url':
-            urls.append(value)
-    if not urls:
-        return 'curl 주소가 없다'
-    bad = next((url for url in urls if not re.match(r'^https?://[^\s]+$', url, re.IGNORECASE)), None)
-    if bad:
-        return f'curl 주소는 http(s):// 만({bad[:40]})'
-    metadata = next((url for url in urls if metadata_host(url)), None)
-    if metadata:
-        return f'curl 클라우드 메타데이터 주소({metadata[:40]} — 자격 증명이 나온다)'
-    # -O 는 주소의 마지막 조각 이름으로 지금 폴더에 쓴다
-    if '--remote-name' in args or any(arg.startswith('-') and not arg.startswith('--') and 'O' in short_letters(arg, 'owmX')[0] for arg in args):
-        for url in urls:
-            name = re.split(r'[?#]', url)[0].rstrip('/').rsplit('/', 1)[-1]
-            why = protected_path(name, cwds)
-            if why:
-                return f'curl -O — {why}'
+def secret_piece(arg, cwds):
+    """낱말 · 그 안의 공백 조각(sed 스크립트 '1r /x/.env' 같은 것) · glob · 붙인 변수를 지운 꼴 · cd 한 곳에 붙인 상대 경로에서 비밀 이름 — 없으면 None"""
+    variants = [arg]
+    if '$' in arg:
+        bare = SHELL_VAR.sub('', arg)
+        variants += [bare, bare.lstrip('/')] if arg.startswith('$') else [bare]
+    for variant in variants:
+        pieces = [variant] + (variant.split() if len(variant.split()) > 1 else [])
+        for piece in pieces:
+            if secret_arg(piece) or glob_secret(piece):
+                return re.split(r'[/:=]', piece.rstrip('/'))[-1]
+        if variant and not variant.startswith(('/', '~', '-')):
+            for base in cwds:
+                for prefix in SECRET_DIRS if base == '?' else (base,):
+                    if secret_arg(posixpath.join(prefix, variant)):
+                        return posixpath.join(prefix, variant)
     return None
 
 
@@ -564,420 +148,370 @@ def metadata_host(url):
     return False
 
 
-def check_sub(name, plain, values, args):
-    """하위 명령 · 그 뒤 인자 — parse 를 지난 뒤"""
-    first = plain[0] if plain else None
-    # systemctl 은 하위 명령이 없으면 list-units(--failed · --version 만 주는 꼴)
-    # loginctl 은 하위 명령이 없으면 list-sessions
-    if name in ('hostnamectl', 'timedatectl', 'systemctl', 'loginctl') and first is None:
+def protected_path(path, cwds=None):
+    """쓰면 물을 경로면 이유 — sudoers · /etc/passwd 무리 · /etc/ssh · .ssh(사용자 · 권한) · /dev(디스크 — /dev/null · stdout · stderr · tty 빼고).
+    상대 경로는 cd 한 곳에 붙여서도 본다"""
+    if not path:
         return None
-    if first not in SUBCOMMANDS[name]:
-        return f'{name} {first or ""}'.strip() + ' (읽기 하위 명령이 아니다)'
-    rest = plain[1:]
-    if name in ('docker', 'podman'):
-        second = DOCKER_SECOND if name == 'docker' else PODMAN_SECOND
-        if first == 'stats' and '--no-stream' not in args:
-            return f'{name} stats 는 --no-stream 만'
-        if first in second and (not rest or rest[0] not in second[first]):
-            return f'{name} {first} {rest[0] if rest else ""}'.strip() + ' (읽기 하위 명령이 아니다)'
-    if name == 'systemctl' and first == 'show':
-        # 옵션 없는 show · -a 는 Environment= 칸(비밀값)까지 낸다 — -p 로 칸을 고르고 Environment 는 고르지 않는다
-        properties = [value for option, value in values if option in ('-p', '-P', '--property')]
-        if not properties:
-            return 'systemctl show 는 -p 로 칸을 골라야(옵션 없는 show 는 Environment 가 보인다)'
-        # Environment= 는 값(비밀값)까지 · SetCredential= 은 자격 증명 값 — EnvironmentFiles= 는 파일 경로만이라 된다(2026-11-25)
-        fields = [field.strip().lower() for value in properties for field in value.split(',')]
-        # systemctl 은 칸 이름의 glob 을 펼친다('*Environment' → Environment= 값 — 2026-11-25 PR 리뷰)
-        if any(char in field for field in fields for char in '*?['):
-            return 'systemctl show -p 의 glob(칸 이름을 펼쳐 Environment 까지 보일 수 있다)'
-        if any(field.startswith(('environment', 'setcredential', 'loadcredential')) and field != 'environmentfiles' for field in fields):
-            return 'systemctl show -p Environment(환경 변수 — 비밀값)'
-        if '--all' in args or any(arg.startswith('-') and not arg.startswith('--') and 'a' in short_letters(arg, 'tnopP')[0] for arg in args):
-            return 'systemctl show -a(모든 칸 — Environment 까지)'
-    if name == 'pm2' and first == 'logs' and '--nostream' not in args:
-        return 'pm2 logs 는 --nostream 만'
-    if name in ('hostnamectl', 'timedatectl') and rest:
-        return f'{name} {first} 뒤 인자'
+    candidates = [path] + [posixpath.join(base, path) for base in cwds or () if base not in ('~', '?') and not path.startswith(('/', '~'))]
+    for each in candidates:
+        normal = '/' + posixpath.normpath(each).lstrip('/') if each.startswith('/') else posixpath.normpath(each)
+        parts = normal.split('/')
+        base = parts[-1]
+        if '.ssh' in parts or base.startswith('sudoers') or base in ('passwd', 'shadow', 'group', 'gshadow') \
+                or re.match(r'^/etc/(ssh|sudoers\.d)(/|$)', normal):
+            return f'사용자 · 권한 파일 쓰기({path})'
+        if re.match(r'^/dev/(?!(null|stdout|stderr|tty|fd/\d+)$)', normal):
+            return f'디스크 — 장치 쓰기({path})'
     return None
 
 
-def git_front(args):
-    """git -C <폴더> … 의 앞 옵션을 걷어 낸 나머지 · 다른 앞 옵션이면 None"""
-    while len(args) >= 2 and args[0] == '-C':
-        args = args[2:]
-    return None if args and args[0].startswith('-') else args
-
-
-def check_git(args):
-    """git 읽기 하위 명령 — 앞 옵션은 -C 만(-c 설정 바꾸기 · --git-dir · --exec-path 는 없다) · 쓰기 · 바깥 명령 옵션은 막는다"""
-    rest = git_front(args)
-    if rest is None:
-        return f'git {next((arg for arg in args if arg.startswith("-") and arg != "-C"), "-C")}(앞 옵션은 -C 만)'
-    sub, rest = (rest[0], rest[1:]) if rest else ('', [])
-    if sub not in GIT_READ:
-        return f'git {sub}'.strip() + '(읽기 하위 명령이 아니다)'
-    for arg in rest:
+def short_has(args, letters, long=()):
+    """옵션 묶음(-rf)에 그 글자가 있나 · 긴 옵션(GNU 줄임 --rec 까지) — -- 뒤는 보지 않는다"""
+    for arg in args:
         if arg == '--':
-            break
-        option = arg.partition('=')[0]
-        if arg.startswith('--') and len(option) > 2 and any(banned.startswith(option) for banned in GIT_BANS):
-            return f'git {sub} {option}(파일 쓰기 · 바깥 명령)'
-        if sub == 'grep' and arg.startswith('-') and not arg.startswith('--') and 'O' in arg:
-            return 'git grep -O(바깥 명령으로 연다)'
-    if sub in GIT_LIST:
-        reason, plain, _ = parse(f'git {sub}', rest, GIT_LIST[sub])
-        if reason:
-            return reason
-        if plain and not any(arg in ('-l', '--list') for arg in rest):
-            return f'git {sub} 만들기(목록은 -l · --list)'
-    plain = [arg for arg in rest if not arg.startswith('-')]
-    if sub == 'stash' and rest[:1] not in (['list'], ['show']):
-        # 하위 명령 없는 git stash(옵션만 줘도)는 push 와 같다 — 작업트리를 치운다(2026-11-11 자동 리뷰 #287)
-        return f'git stash {(rest or ["(하위 명령 없음 = push)"])[0]}(list · show 만)'
-    if sub == 'remote':
-        return check_git_remote(rest)
-    if sub == 'worktree' and plain[:1] != ['list']:
-        return f'git worktree {(plain or [""])[0]}'.strip() + '(list 만)'
-    if sub == 'reflog' and plain[:1] and plain[0] in ('expire', 'delete', 'drop'):
-        return f'git reflog {plain[0]}(지우기)'
-    return None
-
-
-def check_git_remote(rest):
-    """git remote [-v] · get-url [--push] [--all] <이름> · show [-n] <이름…> — 그 밖의 하위 명령 · 옵션은 확인"""
-    words = [arg for arg in rest if arg not in ('-v', '--verbose')]
-    if not words:
-        return None
-    sub, tail = words[0], words[1:]
-    if sub not in GIT_REMOTE:
-        return f'git remote {sub}(목록 · get-url · show 만)'
-    names = [arg for arg in tail if not arg.startswith('-')]
-    bad = next((arg for arg in tail if arg.startswith('-') and arg not in GIT_REMOTE[sub]), None)
-    if bad:
-        return f'git remote {sub} {bad}(허용 옵션이 아니다)'
-    if not names or sub == 'get-url' and len(names) != 1:
-        return f'git remote {sub} 이름 인자'
-    return None
-
-
-def sed_regex_end(script, position, delim):
-    """구분 글자까지 건너뛴 다음 자리 — 백슬래시 뒤 글자는 건너뛴다(GNU match_slash 와 같다) · 못 닫으면 -1"""
-    while position < len(script):
-        if script[position] == '\\':
-            position += 2
-            continue
-        if script[position] == delim:
-            return position + 1
-        position += 1
-    return -1
-
-
-def sed_address(script, position):
-    """주소 하나를 건너뛴 자리 — 숫자 · first~step · $ · +N · ~N · /정규식/ · \\c정규식c(뒤 I · M) · 못 읽으면 -1"""
-    if position >= len(script):
-        return position
-    char = script[position]
-    if char.isdigit() or char in '+~':
-        position += 1
-        while position < len(script) and (script[position].isdigit() or script[position] == '~'):
-            position += 1
-        return position
-    if char == '$':
-        return position + 1
-    if char in '/\\':
-        if char == '\\':
-            if position + 1 >= len(script):
-                return -1
-            position, delim = position + 2, script[position + 1]
-        else:
-            position, delim = position + 1, '/'
-        position = sed_regex_end(script, position, delim)
-        while 0 <= position < len(script) and script[position] in 'IM':
-            position += 1
-    return position
-
-
-def sed_file(command, filename, cwds):
-    """sed 의 r · R · w · W 파일 — 읽기는 비밀값 · 쓰기는 보호 경로도"""
-    if not filename:
-        return f'sed {command} 파일 이름이 없다'
-    if secret_arg(filename):
-        return f'비밀값이 들 수 있는 파일({filename.rsplit("/", 1)[-1]})'
-    if command in 'wW' and filename not in ('/dev/stdout', '/dev/stderr'):
-        why = protected_path(filename, cwds)
-        if why:
-            return f'sed {command} 쓰기 — {why}'
-    return None
-
-
-def sed_script(script, cwds):
-    """sed 스크립트 한 줄 — 명령마다. e · s///e 는 셸을 돌리니 확인 · 모르는 글자도 확인"""
-    position, size = 0, len(script)
-    while position < size:
-        if script[position] in ' \t;':
-            position += 1
-            continue
-        position = sed_address(script, position)
-        if 0 <= position < size and script[position] == ',':
-            position = sed_address(script, position + 1)
-        if position < 0:
-            return 'sed 주소를 읽지 못했다'
-        while position < size and script[position] in ' \t!':
-            position += 1
-        if position >= size:
-            return 'sed 주소 뒤에 명령이 없다'
-        command = script[position]
-        position += 1
-        if command == '#' or command in 'aic':
-            break
-        if command in ':btTv':
-            end = script.find(';', position)
-            position = size if end < 0 else end
-            continue
-        if command in 'rRwW':
-            return sed_file(command, script[position:].strip(), cwds)
-        if command == 'e':
-            return 'sed e(셸 명령을 돌린다)'
-        if command in 'qQlL':
-            while position < size and (script[position].isdigit() or script[position] in ' \t'):
-                position += 1
-            continue
-        if command in SED_SIMPLE:
-            continue
-        if command in 'sy':
-            if position >= size or script[position] in '\\\n':
-                return f'sed {command} 구분 글자'
-            delim = script[position]
-            position = sed_regex_end(script, position + 1, delim)
-            position = sed_regex_end(script, position, delim) if position >= 0 else -1
-            if position < 0:
-                return f'sed {command} 를 닫지 못했다'
-            while command == 's' and position < size and script[position] not in ';}':
-                flag = script[position]
-                if flag == 'e':
-                    return 'sed s///e(바꾼 글을 셸 명령으로 돌린다)'
-                if flag == 'w':
-                    return sed_file('w', script[position + 1:].strip(), cwds)
-                if not (flag in 'gpiImM \t' or flag.isdigit()):
-                    return f'sed s 의 끝 글자 {flag}(판정 못 함)'
-                position += 1
-            continue
-        return f'sed {command}(판정 못 한 명령)'
-    return None
-
-
-def check_sed(args, cwds):
-    """sed — 스크립트(-e · 첫 이름 인자)를 읽어 본다 · -i 면 고칠 파일이 보호 경로가 아니어야 · -f(파일 스크립트)는 확인"""
-    scripts, files, in_place, index, ended = [], [], False, 0, False
-    while index < len(args):
-        arg = args[index]
-        index += 1
-        if ended or arg == '-' or not arg.startswith('-'):
-            files.append(arg)
-            continue
-        if arg == '--':
-            ended = True
-            continue
+            return False
         if arg.startswith('--'):
-            option, has_value, value = arg.partition('=')
-            if option in SED_LONG and not has_value:
-                continue
-            if option == '--in-place':
-                in_place = True
-                continue
-            if option in ('--expression', '--line-length'):
-                if not has_value:
-                    if index >= len(args):
-                        return f'sed {option} 값이 없다'
-                    value, index = args[index], index + 1
-                if option == '--expression':
-                    scripts.append(value)
-                continue
-            return f'sed {option}(판정 못 한 옵션)'
-        for position, letter in enumerate(arg[1:]):
-            if letter in SED_FLAGS:
-                continue
-            if letter == 'i':
-                in_place = True
-                break
-            if letter in 'el':
-                value = arg[position + 2:]
-                if not value:
-                    if index >= len(args):
-                        return f'sed -{letter} 값이 없다'
-                    value, index = args[index], index + 1
-                if letter == 'e':
-                    scripts.append(value)
-                break
-            if letter == 'f':
-                return 'sed -f(파일에 든 스크립트는 읽지 못한다)'
-            return f'sed -{letter}(판정 못 한 옵션)'
-    if not scripts:
-        if not files:
-            return 'sed 스크립트가 없다'
-        scripts.append(files.pop(0))
-    for script in scripts:
-        why = sed_script(script, cwds)
+            option = arg.partition('=')[0]
+            if len(option) > 4 and any(each.startswith(option) for each in long):
+                return True
+        elif arg.startswith('-') and any(letter in arg[1:] for letter in letters):
+            return True
+    return False
+
+
+def plain_args(args):
+    return [arg for arg in args if arg == '-' or not arg.startswith('-')]
+
+
+def dangerous(name, args, cwds):
+    """감싸기를 벗긴 명령 하나 — 물을 것이면 이유"""
+    first = next((arg for arg in args if not arg.startswith('-')), None)
+    if name in POWER:
+        return f'재부팅 · 전원 끄기({name})'
+    if name == 'systemctl' and first in SYSTEMCTL_POWER:
+        return f'재부팅 · 전원 끄기(systemctl {first})'
+    if name.startswith('mkfs') or name in DISK:
+        return f'디스크({name})'
+    if name in DISK_LIST and not any(arg in DISK_LIST[name] for arg in args):
+        return f'디스크({name})'
+    if name == 'mount' and any(arg not in ('-l', '--show-labels') for arg in args):
+        return '디스크(mount)'
+    if name == 'ufw' and not (args[:1] == ['status'] or args[:2] == ['app', 'list'] or args in (['version'], ['--version'])):
+        return f'방화벽 바꾸기(ufw {" ".join(args[:2])})'.replace(' )', ')')
+    if name in IPTABLES and any(arg not in IPTABLES_READ for arg in args):
+        return f'방화벽 바꾸기({name})'
+    if name in ('iptables-restore', 'ip6tables-restore', 'ebtables', 'arptables'):
+        return f'방화벽 바꾸기({name})'
+    if name == 'nft' and plain_args(args)[:1] not in (['list'], ['--version']) and args != ['--version']:
+        return '방화벽 바꾸기(nft)'
+    if name == 'firewall-cmd' and any(not arg.startswith(FIREWALL_READ) for arg in args):
+        return '방화벽 바꾸기(firewall-cmd)'
+    if name in USERS:
+        return f'사용자 · 권한({name})'
+    if name == 'rm' and short_has(args, 'rR', ('--recursive',)):
+        return '재귀 삭제(rm -r)'
+    if name == 'find' and '-delete' in args:
+        return '재귀 삭제(find -delete)'
+    return secret_output(name, args) or write_target(name, args, cwds)
+
+
+def secret_output(name, args):
+    """환경 변수 · 자격 증명을 보이는 명령"""
+    if name in ('env', 'printenv'):
+        return f'비밀값 출력({name} — 환경 변수가 보인다)'
+    # 컨테이너 안에서 돌리는 env · printenv(docker exec web env · kubectl exec web -- printenv)
+    if name in ('docker', 'podman', 'nerdctl', 'kubectl', 'oc') and 'exec' in args and any(arg in ('env', 'printenv') for arg in args):
+        return f'비밀값 출력({name} exec … env — 환경 변수가 보인다)'
+    if name == 'ps' and any(re.fullmatch(r'[a-zA-Z]*e[a-zA-Z]*', arg) for arg in args) or name == 'ps' and any('env' in arg.lower() for arg in args):
+        return '비밀값 출력(ps e — 환경 변수가 보인다)'
+    words = plain_args(args)
+    if name == 'systemctl' and words[:1] == ['show']:
+        fields = [field.strip().lower() for index, arg in enumerate(args)
+                  for value in [property_value(args, index)] if value is not None for field in value.split(',')]
+        if not fields or short_has(args, 'a', ('--all',)):
+            return 'systemctl show 는 -p 로 칸을 골라야(옵션 없는 show · -a 는 Environment 가 보인다)'
+        if any(char in field for field in fields for char in '*?['):
+            return 'systemctl show -p 의 glob(Environment 까지 보일 수 있다)'
+        if any(field.startswith(('environment', 'setcredential', 'loadcredential')) and field != 'environmentfiles' for field in fields):
+            return '비밀값 출력(systemctl show -p Environment)'
+    if name in ('docker', 'podman', 'nerdctl') and ('inspect' in words[:2] or words[:2] == ['compose', 'config']):
+        return f'비밀값 출력({name} {" ".join(words[:2])} — 환경 변수 값이 보인다)'
+    if name in ('kubectl', 'k3s', 'oc'):
+        if any(word.startswith(('secret', 'configmap', 'cm')) for word in words) and any(word in ('get', 'describe', 'edit') for word in words):
+            return f'비밀값 출력({name} secret)'
+    return None
+
+
+def property_value(args, index):
+    """systemctl show 의 -p · -P · --property 값 — 그 자리가 아니면 None"""
+    arg = args[index]
+    if arg in ('-p', '-P', '--property'):
+        return args[index + 1] if index + 1 < len(args) else ''
+    if arg.startswith('--property='):
+        return arg.partition('=')[2]
+    if re.match(r'^-[pP].', arg):
+        return arg[2:]
+    return None
+
+
+def write_target(name, args, cwds):
+    """쓰기 명령이 쓰는 곳 — 사용자 · 권한 파일 · 장치"""
+    targets = []
+    if name in COPY_LIKE:
+        for index, arg in enumerate(args):
+            if arg in ('-t', '--target-directory') and index + 1 < len(args):
+                targets.append(args[index + 1])
+            elif arg.startswith('--target-directory='):
+                targets.append(arg.partition('=')[2])
+        targets += plain_args(args)[-1:]
+    elif name in WRITERS or name == 'sed' and short_has(args, 'i', ('--in-place',)):
+        targets = plain_args(args)
+    elif name == 'dd':
+        targets = [arg[3:] for arg in args if arg.startswith('of=')]
+    elif name == 'uniq':
+        targets = plain_args(args)[1:2]
+    # 출력 파일 옵션(sort -o · curl -o · wget -O · git log --output) · sed 스크립트의 w 파일
+    targets += output_options(name, args)
+    for target in targets:
+        why = protected_path(target, cwds)
         if why:
             return why
-    if in_place:
-        for target in files:
-            why = protected_path(target, cwds)
-            if why:
-                return f'sed -i — {why}'
     return None
 
 
-def danger(name, args):
-    """위험 표에 든 명령이면 '분류(명령)' — 하위 명령까지 보는 것(systemctl · docker · podman · kubectl · git · find)도 여기"""
-    if name.startswith('mkfs'):
-        return f'디스크({name})'
-    if name in DANGER_NAMES:
-        return f'{DANGER_NAMES[name]}({name})'
-    if name == 'find' and '-delete' in args:
-        return '삭제(find -delete)'
-    if name == 'git':
-        rest = git_front(args) or []
-        if rest[:1] == ['clean'] or rest[:1] == ['reset'] and '--hard' in rest:
-            return f'삭제(git {rest[0]}{" --hard" if rest[0] == "reset" else ""})'
-        return None
-    plain = [arg for arg in args if not arg.startswith('-')]
-    if name == 'k3s' and plain[:1] == ['kubectl']:
-        name, plain = 'kubectl', plain[1:]
-    if not plain:
-        return None
-    first = plain[0]
-    if name == 'systemctl' and first in SYSTEMCTL_DANGER:
-        return f'{SYSTEMCTL_DANGER[first]}(systemctl {first})'
-    if name == 'kubectl' and first in KUBECTL_DANGER:
-        return f'{KUBECTL_DANGER[first]}(kubectl {first})'
-    if name in ('docker', 'podman'):
-        word = plain[1] if first in CONTAINER_DANGER_SECOND and len(plain) > 1 and plain[1] in CONTAINER_DANGER_SECOND[first] else None
-        if word or first in CONTAINER_DANGER:
-            kind = '삭제' if (word or first) in REMOVE_WORDS else SERVICE_KIND
-            return f'{kind}({name} {first}{" " + word if word else ""})'
-    return None
-
-
-def check_cd(args, cwds, under_sudo):
-    """cd — 갈 수 있는 곳을 cwds 에 더한다(실패 · 파이프 안 cd 도 있으니 바꾸지 않고 모은다)"""
-    if under_sudo:
-        return 'sudo cd'
-    rest = [arg for arg in args if arg not in ('-L', '-P')]
-    if len(rest) > 1:
-        return 'cd 인자가 많다'
-    if not rest:
-        cwds.add('~')
-    elif rest[0] == '-':
-        cwds.add('?')
-    else:
-        cwds.update({join_cwd(base, rest[0]) for base in cwds})
-    return None
-
-
-def judge(name, args, cwds, under_sudo):
-    """위험 표 · 다른 명령 돌리기를 지난 명령 — 명령마다 판정 · 옵션 자유 목록 · 그 밖은 판정 못 함"""
-    if name == 'cd':
-        return check_cd(args, cwds, under_sudo)
-    if name == 'git':
-        return check_git(args)
+def output_options(name, args):
+    """출력 파일을 받는 옵션 값 — 그 명령만"""
+    shorts = {'sort': 'o', 'curl': 'o', 'wget': 'O', 'tar': 'f'}.get(name, '')
+    longs = {'sort': ('--output',), 'curl': ('--output',), 'wget': ('--output-document',), 'git': ('--output',)}.get(name, ())
+    out = []
+    for index, arg in enumerate(args):
+        following = args[index + 1] if index + 1 < len(args) else ''
+        if arg.startswith('--') and longs:
+            option, has_value, value = arg.partition('=')
+            if len(option) > 4 and any(each.startswith(option) for each in longs):
+                out.append(value if has_value else following)
+        elif shorts and re.match(rf'^-[a-zA-Z]*{shorts}', arg):
+            rest = arg[arg.index(shorts, 1) + 1:]
+            out.append(rest or following)
     if name == 'sed':
-        return check_sed(args, cwds)
-    if name == 'docker' and args and args[0].startswith('-'):
-        return f'docker {args[0]}(앞 옵션 — 다른 데몬 · 설정)'
-    if name in EXACT:
-        return check_exact(name, args)
+        out += [match.group(1) for arg in args for match in re.finditer(r'(?:^|[;\s/}])[wW]\s*(\S+)', arg)]
+    return out
+
+
+def unwrap(words):
+    """감싸기(sudo · env · nohup · timeout · xargs …)와 앞 환경 값을 벗긴 (명령 이름, 인자) · 안에 다시 볼 셸 글자 목록"""
+    inner = []
+    while words:
+        head = words[0]
+        if head in KEYWORDS or re.match(r'^[A-Za-z_]\w*\+?=', head):
+            words = words[1:]
+            continue
+        name = posixpath.basename(head)
+        if name == 'env':
+            rest = words[1:]
+            while rest and (rest[0].startswith('-') or re.match(r'^[A-Za-z_]\w*=', rest[0])):
+                if rest[0] in ('-u', '-C', '--unset', '--chdir') and len(rest) > 1:
+                    rest = rest[1:]
+                elif rest[0] in ('-S', '--split-string') and len(rest) > 1:
+                    inner.append(rest[1])
+                    rest = rest[1:]
+                rest = rest[1:]
+            if not rest:
+                return 'env', words[1:], inner
+            words = rest
+            continue
+        if name in WRAPPERS or name in WRAPPER_FIRST:
+            values, rest = WRAPPERS.get(name, ''), words[1:]
+            while rest and rest[0].startswith('-') and rest[0] != '-':
+                option = rest[0]
+                rest = rest[1:]
+                if option == '--':
+                    break
+                if not option.startswith('--') and option[-1] in values and rest:
+                    rest = rest[1:]
+            rest = rest[WRAPPER_FIRST.get(name, 0):]
+            if not rest:
+                return name, words[1:], inner
+            words = rest
+            continue
+        return name, words[1:], inner
+    return '', [], inner
+
+
+def shell_strings(name, args):
+    """안에 명령 글자를 받는 것 — sh -c '…' · su -c '…' · eval … · find -exec … ; 의 글자 목록"""
+    if name in SHELLS:
+        for index, arg in enumerate(args):
+            if re.fullmatch(r'-[a-zA-Z]*c[a-zA-Z]*', arg) or arg == '--command':
+                return args[index + 1:index + 2]
+        return []
+    if name == 'eval':
+        return [' '.join(args)]
     if name == 'find':
-        return check_find(args)
-    if name == 'ps':
-        return check_ps(args)
-    if name == 'ip':
-        return check_ip(args)
-    if name == 'curl':
-        return check_curl(args, cwds)
-    if name == 'kubectl':
-        return check_kubectl(args)
-    if name == 'k3s':
-        return check_kubectl(args[1:]) if args and args[0] == 'kubectl' else 'k3s 는 kubectl get 만'
-    if name == 'sar':
-        return check_sar(args)
-    if name == 'sleep':
-        if len(args) != 1 or not re.fullmatch(r'\d+(\.\d+)?', args[0]) or float(args[0]) > SLEEP_MAX:
-            return f'sleep 은 {SLEEP_MAX}초 이하 숫자 하나만'
-        return None
-    if name == 'podman' and args and args[0].startswith('-'):
-        return f'podman {args[0]}(앞 옵션 — 다른 연결 · 설정)'
-    if name == 'command':
-        return None if len(args) >= 2 and args[0] == '-v' and not any(arg.startswith('-') for arg in args[1:]) else 'command 는 -v 만'
-    if name == 'iptables':
-        bad = next((arg for arg in args if arg not in IPTABLES_WORDS), None)
-        return f'iptables {bad}' if bad else None
-    if name == 'dpkg':
-        return None if args and args[0] in ('-l', '--list', '-s', '--status') and not any(arg.startswith('-') for arg in args[1:]) else 'dpkg 는 -l · -s 만'
-    if name in FREE:
-        return check_free(name, args, cwds)
-    if name not in SPECS:
-        return f'판정 못 한 명령({name})'
-    reason, plain, values = parse(name, args, SPECS[name])
+        out, current = [], None
+        for arg in args:
+            if arg in ('-exec', '-execdir', '-ok', '-okdir'):
+                current = []
+            elif current is not None and arg in (';', '+', '\\;'):
+                out.append(shlex.join(current))
+                current = None
+            elif current is not None:
+                current.append(arg)
+        if current:
+            out.append(shlex.join(current))
+        return out
+    return []
+
+
+def substitutions(command):
+    """$( ) · <( ) · >( ) · 백틱 안의 글자 — 홑따옴표 안은 빼고(큰따옴표 안도 원격 셸이 돌린다)"""
+    out, quote, index = [], None, 0
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = None
+        elif char == '\\':
+            index += 1
+        elif char == "'" and quote is None:
+            quote = "'"
+        elif char == '"':
+            quote = None if quote == '"' else '"'
+        elif char == '`':
+            end = command.find('`', index + 1)
+            out.append(command[index + 1:end if end > 0 else len(command)])
+            index = end if end > 0 else len(command)
+        elif char in '$<>' and command[index + 1:index + 2] == '(':
+            depth, end = 0, index + 1
+            while end < len(command):
+                depth += {'(': 1, ')': -1}.get(command[end], 0)
+                if depth == 0:
+                    break
+                end += 1
+            out.append(command[index + 2:end])
+        index += 1
+    return out
+
+
+def variable_reason(command):
+    """홑따옴표 밖 $이름 · ${이름} 중 비밀값일 수 있는 이름"""
+    quote, index = None, 0
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = None
+        elif char == '\\':
+            index += 1
+        elif char == "'" and quote is None:
+            quote = "'"
+        elif char == '"':
+            quote = None if quote == '"' else '"'
+        elif char == '$':
+            match = re.match(r'\{?!?([A-Za-z_]\w*)', command[index + 1:])
+            if match and SECRET_VAR.search(match.group(1)):
+                return f'비밀값 출력(${match.group(1)})'
+        index += 1
+    return None
+
+
+def tokens_of(command):
+    """셸 낱말 — 따옴표가 맞지 않으면 공백 · 연산자로만 나눈다(판정 못 해도 바로 돈다)"""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.commenters = ''
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return re.findall(r'[;&|()<>]+|[^\s;&|()<>]+', command)
+
+
+def check(command, depth=0):
+    """원격 명령 글자 전체 — 바로면 None, 물을 것이면 이유. 이어 붙인 명령 · 치환 · 셸 안 글자를 모두 본다"""
+    if not command.strip():
+        return None if depth else '빈 명령'
+    if depth > DEPTH_MAX:
+        return '셸 안의 셸이 너무 깊다(판정 못 함)'
+    for url in re.findall(r'https?://[^\s\'"`;|&()<>]+', command, re.IGNORECASE):
+        if metadata_host(url):
+            return f'클라우드 메타데이터 주소({url[:40]} — 자격 증명이 나온다)'
+    reason = variable_reason(command)
     if reason:
         return reason
-    if name == 'date' and any(not arg.startswith('+') for arg in plain):
-        return 'date 인자(시각 바꾸기)'
-    if name in SUBCOMMANDS:
-        return check_sub(name, plain, values, args)
+    for inner in substitutions(command):
+        reason = check(inner, depth + 1)
+        if reason:
+            return reason
+    cwds, names = set(), {}
+    words, tokens, index = [], tokens_of(command.replace('\r', '\n').replace('\n', ' ; ')), 0
+    while index <= len(tokens):
+        token = tokens[index] if index < len(tokens) else ';'
+        index += 1
+        if token in WRITE_REDIRECTS or token == '<' or token in ('<>', '>&') and index < len(tokens) and not tokens[index].isdigit():
+            target = tokens[index] if index < len(tokens) else ''
+            index += 1
+            if words and words[-1].isdigit():
+                words.pop()
+            why = secret_piece(target, cwds) and f'비밀 파일({secret_piece(target, cwds)})' or token != '<' and protected_path(target, cwds)
+            if why:
+                return why
+            continue
+        if token not in SEPARATORS and not all(char in ';&|()<>' for char in token):
+            words.append(token)
+            continue
+        if words:
+            reason = check_words(words, cwds, depth, names)
+            if reason:
+                return reason
+        words = []
     return None
 
 
-def check_one(words, cwds=None, under_sudo=False):
-    """명령 하나(낱말 목록) — 바로 실행이면 None, 확인할 것이면 이유. cwds 는 cd 로 갈 수 있는 곳(명령 잇기 사이에 쌓인다)"""
-    if cwds is None:
-        cwds = {'~'}
-    if not words:
-        return '빈 명령'
-    if words[0] == SAR_ENV and not under_sudo:
-        return check_sar(words[2:]) if len(words) > 1 and words[1] == 'sar' else f'{SAR_ENV} 는 sar 앞에서만'
-    if re.match(r'^[A-Za-z_]\w*=', words[0]):
-        return f'환경 값 앞붙임({words[0].split("=")[0]}=…)'
-    if words[0] == 'sudo':
-        if under_sudo:
-            return 'sudo 안의 sudo'
-        rest = words[1:]
-        while rest and rest[0] == '-n':
-            rest = rest[1:]
-        if rest and rest[0].startswith('-'):
-            return f'sudo 옵션 {rest[0]}'
-        if not rest:
-            return 'sudo 뒤에 명령이 없다'
-        # sudo 뒤도 같은 판정(2026-11-11 — 예전의 더 좁은 목록은 없앴다)
-        return check_one(rest, cwds, under_sudo=True)
-    name, args = words[0], words[1:]
-    if VAR in name:
-        return f'변수로 부른 명령({name.replace(VAR, "$…")})'
-    if '/' in name:
-        return f'경로로 부른 명령({name})'
+def check_words(words, cwds, depth, names):
+    """명령 하나 — 감싸기를 벗기고 셸 안 글자는 다시 check. names 는 같은 줄에서 앞서 정한 변수 값(f=.env; cat $f)"""
+    for word in words:
+        assigned = re.match(r'^([A-Za-z_]\w*)\+?=(.*)$', word)
+        if assigned:
+            names[assigned.group(1)] = assigned.group(2)
+    name, args, inner = unwrap(words)
+    if name in ('export', 'declare', 'typeset', 'local', 'readonly'):
+        return check_words(args, cwds, depth, names)
+    if names:
+        args = [SHELL_VAR.sub(lambda match: names.get(match.group(1).strip('{}'), match.group(0)), arg) if '$' in arg else arg for arg in args]
+    for text in inner + shell_strings(name, args):
+        reason = check(text, depth + 1)
+        if reason:
+            return reason
+    if not name:
+        return None
+    if name == 'cd':
+        target = plain_args(args)[:1]
+        cwds.add(target[0] if target and target[0] != '-' else '?')
+        return None
+    # 비밀 파일 이름 — grep 의 -e <패턴> 자리 · 메타데이터 주소 · URL 은 파일이 아니다
     patterns = grep_patterns(name, args)
     for position, arg in enumerate(args):
-        # 변수 자리는 무엇이든 될 수 있다 — / 로도 빈 글자로도 넣어 이름을 본다("$HOME/.env" · .e"$1"nv)
-        bad = None if position in patterns else var_secret(arg, cwds)
+        if position in patterns or re.match(r'^https?://', arg, re.IGNORECASE):
+            continue
+        bad = secret_piece(arg, cwds)
         if bad:
-            return f'비밀값이 들 수 있는 파일({bad})'
-    hazard = danger(name, args)
-    if hazard and not (name in READ_FORMS and judge(name, args, cwds, under_sudo) is None):
-        return f'위험 명령 — {hazard}'
-    reason = variable_args(name, args)
-    if reason:
-        return reason
-    if hazard:
-        return None
-    if name in RUNNERS and not (name in EXACT and check_exact(name, args) is None):
-        return f'다른 명령을 돌린다({name})' if name not in ('env', 'printenv') else f'{name}(환경 변수가 보인다)'
-    return judge(name, args, cwds, under_sudo)
+            return f'비밀 파일({bad})'
+        if name not in SSH_LISTERS and '.ssh' in arg.rstrip('/').split('/') and not arg.startswith('-'):
+            return f'비밀 파일(.ssh 폴더 읽기 — {arg[:40]})'
+    if name in ('curl', 'wget'):
+        # 주소처럼 생긴 것만(-m 10 같은 짧은 숫자 값은 빼고) — 점 · 콜론이 있거나 metadata · 0x 로 시작하거나 8자 이상 숫자
+        hosts = [arg for arg in plain_args(args) if '.' in arg or ':' in arg or arg.lower().startswith(('metadata', '0x')) or len(arg) >= 8]
+        bare = next((arg for arg in hosts if metadata_host('http://' + arg)), None)
+        if bare:
+            return f'클라우드 메타데이터 주소({bare[:40]} — 자격 증명이 나온다)'
+    return dangerous(name, args, cwds)
 
 
 def grep_patterns(name, args):
     """grep 무리의 -e <패턴> · --regexp=<패턴> 자리 — 파일이 아니라 찾을 글자라 비밀 이름 검사에서 뺀다(grep -e secret)"""
     spots, index = set(), 0
-    if name not in ('grep', 'egrep', 'fgrep', 'zgrep'):
+    if name not in ('grep', 'egrep', 'fgrep', 'zgrep', 'rg'):
         return spots
     while index < len(args):
         arg = args[index]
@@ -989,330 +523,14 @@ def grep_patterns(name, args):
             spots.add(index + 1)
             index += 1
         elif arg.startswith('-') and not arg.startswith('--') and arg != '-':
-            _letters, letter, value = short_letters(arg, GREP_FREE['values'])
-            if letter == 'e':
-                spots.add(index if value else index + 1)
-            if letter and not value:
+            letters = arg[1:]
+            position = next((spot for spot, letter in enumerate(letters) if letter in 'efmABCDd'), -1)
+            if position >= 0 and letters[position] == 'e':
+                spots.add(index if letters[position + 1:] else index + 1)
+            if position >= 0 and not letters[position + 1:]:
                 index += 1
         index += 1
     return spots
-
-
-def variable_args(name, args):
-    """큰따옴표 안 변수(VAR)가 든 인자 — 값을 모르니 옵션 자유 읽기 명령(FREE · 쓰기 아님)의 인자만 된다.
-    SHELL_VARS 값은 경로 · 이름 · 숫자라 - 로 시작하지 않는다(막는 옵션으로 바뀌지 않는다)"""
-    for arg in args:
-        if VAR in arg and (name not in FREE or name in WRITERS):
-            return f'변수가 든 인자({name} {arg.replace(VAR, "$…")} — 값을 몰라 판정 못 한다)'
-    return None
-
-
-def check_ps(args):
-    words = [arg for arg in args if not arg.startswith('-')]
-    dashed = [arg for arg in args if arg.startswith('-')]
-    if words and not dashed and len(words) == 1 and words[0] and set(words[0]) <= PS_BSD:
-        return None
-    reason, plain, values = parse('ps', args, PS)
-    if reason:
-        return reason
-    if any(not re.fullmatch(r'[\d,]+', arg) for arg in plain):
-        return 'ps 의 BSD 꼴은 aux 같은 글자만(e · o 는 확인 대상)'
-    if any('env' in value.lower() for _, value in values):
-        return 'ps 형식에 env(환경 변수)'
-    return None
-
-
-def check_ip(args):
-    while args and args[0] in IP_OPTIONS:
-        args = args[1:]
-    if not args or args[0] not in IP_OBJECTS:
-        return f'ip {(args or [""])[0]}'.strip() + '(읽기 하위 명령이 아니다)'
-    rest = args[1:]
-    if rest and rest[0] not in IP_ACTIONS and rest[0].startswith('-'):
-        return f'ip {rest[0]}'
-    if rest and rest[0] not in IP_ACTIONS and rest[0] not in ('dev', 'to', 'table', 'from'):
-        return f'ip {args[0]} {rest[0]}(읽기 하위 명령이 아니다)'
-    if any(arg.startswith('-') for arg in rest):
-        return 'ip 뒤쪽 옵션'
-    return None
-
-
-def check_kubectl(args):
-    """kubectl get <자원> [이름] — 정한 자원 · 표 출력만(kubectl · k3s kubectl 이 같이 쓴다)"""
-    if not args or args[0] != 'get':
-        return f'kubectl {(args or [""])[0]}'.strip() + '(get 만)'
-    reason, plain, values = parse('kubectl get', args[1:], KUBECTL_GET)
-    if reason:
-        return reason
-    if not plain or plain[0] not in KUBECTL_RESOURCES:
-        return f'kubectl get {plain[0] if plain else ""}'.strip() + '(정한 자원이 아니다 — pods · deployments · nodes · statefulsets · daemonsets)'
-    if len(plain) > 2:
-        return 'kubectl get 이름 인자가 많다'
-    for option, value in values:
-        if option in ('-o', '--output') and value != 'wide':
-            return f'kubectl get {option} {value}(표 출력 — wide 만)'
-        if option == '--request-timeout' and not re.fullmatch(r'\d+[sm]?', value):
-            return 'kubectl --request-timeout 은 숫자(s · m)만'
-    return None
-
-
-def check_sar(args):
-    """sar -u · -q · -r · -n DEV · -f /var/log/sysstat/saNN · -s/-e 시각 · 끝의 간격 · 횟수 숫자만"""
-    reason, plain, values = parse('sar', args, SAR)
-    if reason:
-        return reason
-    # 간격만 주면 끝없이 돈다 — 간격 · 횟수 둘 다(짧게)
-    if plain and (len(plain) != 2 or any(not arg.isdigit() for arg in plain) or int(plain[0]) > SLEEP_MAX or not 1 <= int(plain[1]) <= 10):
-        return f'sar 끝 인자는 간격(≤{SLEEP_MAX}) · 횟수(≤10) 숫자 둘만'
-    for option, value in values:
-        if option == '-n' and value != 'DEV':
-            return f'sar -n {value}(DEV 만)'
-        if option == '-f' and not SAR_FILE.fullmatch(value):
-            return f'sar -f {value}(/var/log/sysstat/saNN 만)'
-        if option in ('-s', '-e') and not SAR_TIME.fullmatch(value):
-            return f'sar {option} {value}(HH:MM[:SS] 만)'
-    return None
-
-
-def bare_chars(command):
-    """따옴표 · 백슬래시 밖의 글자마다 (자리, 글자, 낱말 시작 자리) — 따옴표 안 · 이스케이프된 글자는 '' 로(낱말은 이어진다)"""
-    quote, index, start, out = None, 0, 0, []
-    while index < len(command):
-        char = command[index]
-        if quote == "'":
-            if char == "'":
-                quote = None
-            out.append((index, '', start))
-        elif quote == '"':
-            if char == '\\':
-                out.append((index, '', start))
-                index += 1
-            elif char == '"':
-                quote = None
-            out.append((index, '', start))
-        elif char == '\\':
-            out.append((index, '', start))
-            index += 1
-            out.append((index, '', start))
-        elif char in '\'"':
-            quote = char
-            out.append((index, '', start))
-        else:
-            if char.isspace() or char in '();<>|&':
-                start = index + 1
-            out.append((index, char, start))
-        index += 1
-    return out
-
-
-def unquoted_expansion(command):
-    """따옴표 · 백슬래시 밖에서 원격 셸이 펼치는 글자 — 이름 검사를 비켜 간다(.{env,x} · .en? · ~/.ssh 의 ~root).
-    * ? 는 늘 · [ 는 같은 낱말에 닫는 ] 가 있을 때 · { 는 같은 낱말에 , 나 .. 가 있을 때(%{http_code} · {{.Names}} 는 된다) ·
-    ~ 는 낱말 맨 앞에서 / 나 낱말 끝이 아닌 것(~root · ~+) 과 = · : 바로 뒤(a=~/x — bash 가 펼친다)"""
-    chars = bare_chars(command)
-    for position, (index, char, start) in enumerate(chars):
-        if not char:
-            continue
-        rest = []
-        for _later, later, later_start in chars[position + 1:]:
-            if later_start != start:
-                break
-            rest.append(later)
-        if char in '*?':
-            return char
-        if char == '[' and ']' in rest:
-            return char
-        if char == '{' and (',' in rest or '..' in ''.join(each or ' ' for each in rest)):
-            return char
-        if char == '~':
-            at_start = index == start
-            before = None if at_start else chars[position - 1][1]
-            follows = rest[0] if rest else None
-            if at_start and follows not in (None, '/'):
-                return char
-            if before in ('=', ':'):
-                return char
-    return None
-
-
-def dollar_reason(command, index, quoted):
-    """command[index] 의 $ 를 셸 문법대로 — (이유 | None, 바꿀 글자, 다음 자리). 이유가 없으면 바꿀 글자로 바꿔 넘긴다"""
-    following = command[index + 1:index + 2]
-    if following not in DOLLAR_STARTS and not (following in '"\'' and following and not quoted):
-        return None, '$', index + 1
-    if following == '(':
-        return '명령 치환 $( )', '', 0
-    if following in '"\'':
-        return f'${following}…{following}(따옴표 밖 $ 뒤 따옴표 — 이스케이프로 글자를 만든다)', '', 0
-    match = SIMPLE_VAR.match(command, index + 1)
-    if not match:
-        return f'${"{…}" if following == "{" else following}(셸 변수 · 문법)', '', 0
-    name = match.group(1) or match.group(2) or ''
-    if name and name not in SHELL_VARS:
-        return f'${name}(정한 변수가 아니다 — 환경 변수 값에 비밀값이 들 수 있다)', '', 0
-    if name and not quoted:
-        return f'따옴표 밖의 ${name}(큰따옴표로 감싼다)', '', 0
-    return None, VAR, match.end()
-
-
-def shell_variables(command):
-    """원격 셸이 $ 를 어떻게 펼치는지 셸 문법대로 — (이유 | None, 허용 변수를 VAR 로 바꾼 명령).
-    홑따옴표 안 · \\$ · $ 뒤가 이름 · 기호가 아닌 것(낱말 끝 '^$' · "$ ")은 글자 그대로. 큰따옴표 안의 단순 변수
-    ($HOME · ${USER} — SHELL_VARS 만)와 $? · $# · $숫자 는 VAR 로 바꾼다. 그 밖($( ) · ${…:-} · $'…' · $_ · $@ · 따옴표 밖 $HOME)은 이유.
-    큰따옴표 안 \\$ 는 셸처럼 $ 로 바꿔 넘긴다(shlex 는 \\ 를 남긴다)"""
-    quote, index, out = None, 0, []
-    while index < len(command):
-        char = command[index]
-        if quote == "'":
-            if char == "'":
-                quote = None
-        elif char == '$':
-            reason, replace, after = dollar_reason(command, index, quote == '"')
-            if reason:
-                return reason, command
-            out.append(replace)
-            index = after
-            continue
-        elif quote == '"':
-            if char == '\\' and command[index + 1:index + 2] == '$':
-                out.append('$')
-                index += 2
-                continue
-            if char == '\\':
-                out.append(command[index:index + 2])
-                index += 2
-                continue
-            if char == '"':
-                quote = None
-        elif char == '\\':
-            out.append(command[index:index + 2])
-            index += 2
-            continue
-        elif char in '\'"':
-            quote = char
-        out.append(char)
-        index += 1
-    return None, ''.join(out)
-
-
-def redirect_marks(command):
-    """따옴표 · 백슬래시 밖의 < · > 든 연산자 묶음마다 — 바로 앞에 붙은 숫자(앞은 처음 · 공백 · 연산자)가 있나.
-    shlex 는 띄어쓰기를 잊어 `date 11081200 >/dev/null` 과 `date 11081200>/dev/null` 을 가르지 못한다(2026-11-08 PR 리뷰 2)"""
-    marks, quote, index = [], None, 0
-    while index < len(command):
-        char = command[index]
-        if quote == "'":
-            if char == "'":
-                quote = None
-        elif quote == '"':
-            if char == '\\':
-                index += 1
-            elif char == '"':
-                quote = None
-        elif char == '\\':
-            index += 1
-        elif char in '\'"':
-            quote = char
-        elif char in '();<>|&':
-            end = index
-            while end < len(command) and command[end] in '();<>|&':
-                end += 1
-            if any(op in command[index:end] for op in '<>'):
-                start = index
-                while start > 0 and command[start - 1].isdigit():
-                    start -= 1
-                before = command[start - 1] if start > 0 else ' '
-                marks.append(start < index and (before.isspace() or before in '();<>|&'))
-            index = end
-            continue
-        index += 1
-    return marks
-
-
-def finish(words, targets, cwds):
-    """명령 하나를 판정하고 그 명령의 쓰기 리다이렉트 쓰는 곳을 본다(cd 가 cwds 를 넓힌 뒤 — 넉넉히)"""
-    reason = check_one(words, cwds)
-    if reason:
-        return reason
-    for target in targets:
-        if VAR in target:
-            return f'쓰기 리다이렉트 — 변수가 든 쓰는 곳({target.replace(VAR, "$…")})'
-        if secret_arg(target):
-            return f'쓰기 리다이렉트 — 비밀값이 들 수 있는 파일({re.split(r"[/:=]", target.rstrip("/"))[-1]})'
-        why = protected_path(target, cwds)
-        if why:
-            return f'쓰기 리다이렉트 — {why}'
-    return None
-
-
-def check(command):
-    """원격 명령 글자 전체 — 바로 실행이면 None, 확인할 것이면 이유. 명령 잇기(; && || |) 안의 명령을 모두 본다"""
-    if not command.strip():
-        return '빈 명령'
-    if re.search(r'[\n\r]', command):
-        return '줄바꿈(여러 줄 명령)'
-    if '`' in command:
-        return '백틱(명령 치환)'
-    if VAR in command:
-        return '판정용 자리표 글자(U+E000)가 들었다'
-    reason, command = shell_variables(command)
-    if reason:
-        return f'{reason} — 원격 셸이 펼친다'
-    expands = unquoted_expansion(command)
-    if expands:
-        return f'따옴표 밖의 {expands}(원격 셸이 펼친다 — 이름을 하나씩 적는다)'
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.commenters = ''
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError as error:
-        return f'따옴표가 맞지 않다({error})'
-    marks = redirect_marks(command)
-    if len(marks) != sum(1 for token in tokens if token and all(char in '();<>|&' for char in token) and any(op in token for op in '<>')):
-        return '리다이렉트를 읽지 못했다'
-    marks.reverse()
-    cwds = {'~'}
-    words, targets, index = [], [], 0
-    while index < len(tokens):
-        token = tokens[index]
-        # 이 연산자 바로 앞에 붙은 fd 숫자 — 붙은 것만 fd(나머지 숫자는 그 명령의 인자)
-        attached = marks.pop() if token and all(char in '();<>|&' for char in token) and any(op in token for op in '<>') else False
-        if token in SEPARATORS:
-            reason = finish(words, targets, cwds)
-            if reason:
-                return reason
-            words, targets, index = [], [], index + 1
-            continue
-        if token in WRITE_REDIRECTS:
-            target = tokens[index + 1] if index + 1 < len(tokens) else ''
-            if not target or all(char in '();<>|&' for char in target):
-                return f'쓰기 리다이렉트 {token}(쓰는 곳이 없다)'
-            if target != '/dev/null':
-                targets.append(target)
-            if attached and words and words[-1].isdigit():
-                words.pop()
-            index += 2
-            continue
-        if token in ('>&', '<&'):
-            target = tokens[index + 1] if index + 1 < len(tokens) else ''
-            if not target.isdigit():
-                return f'리다이렉트 {token}{target}'
-            if attached and words and words[-1].isdigit():
-                words.pop()
-            index += 2
-            continue
-        if token == '<':
-            target = tokens[index + 1] if index + 1 < len(tokens) else ''
-            if not target or var_secret(target, cwds):
-                return f'읽기 리다이렉트 {target.replace(VAR, "$…")}'.strip()
-            index += 2
-            continue
-        if token and all(char in '();<>|&' for char in token):
-            return f'셸 문법 {token}(서브셸 · heredoc · 백그라운드 · 프로세스 치환)'
-        words.append(token)
-        index += 1
-    return finish(words, targets, cwds)
 
 
 def key(server, kind, text):
@@ -1393,4 +611,3 @@ if __name__ == '__main__':
             print(why)
         sys.exit(0 if why else 1)
     print(__doc__.split('CLI')[1], file=sys.stderr)
-    sys.exit(2)
