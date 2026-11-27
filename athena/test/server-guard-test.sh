@@ -233,6 +233,47 @@ cat `printf .env`
 head -5 "$(ls /srv/app/.e*)"
 base64 "$(echo x)"
 LIST
+echo "② 확인 — 재부팅 대상 켜기 · systemd-run 안 · 셸 변수 통째 출력(2026-11-28 PR #382 리뷰)"
+while IFS= read -r line; do allow deny "$line"; done <<'LIST'
+systemctl start poweroff.target
+systemctl isolate reboot.target
+systemctl isolate runlevel6.target
+systemctl isolate runlevel0.target
+systemctl isolate reboot
+systemctl start halt.target
+systemctl set-default runlevel0.target
+systemd-run reboot
+systemd-run --unit x --on-active=30 reboot
+systemd-run -u x -p A=1 shutdown -h now
+sudo systemd-run --scope systemctl isolate reboot.target
+command reboot
+command rm -rfv /tmp/x
+command reboot -v
+command -- reboot
+set
+declare -p
+export -p
+typeset -p
+export
+declare -px
+ls; set
+LIST
+echo "① 바로 — 같은 리뷰 뒤에도 그대로(보기 · 찾기 · 인자 있는 set · export)"
+while IFS= read -r line; do allow allow "$line"; done <<'LIST'
+systemctl status reboot.target
+systemctl list-dependencies poweroff.target
+systemctl start rebooter.service
+systemd-run --unit x ls
+command -v reboot
+command -V shutdown
+command -pv reboot
+set -e
+set -o pipefail
+set -- a b
+export X=1
+declare -p HOME
+declare -F
+LIST
 allow deny "$(printf 'ls\nreboot')"
 
 # 가짜 요청 읽기 — r-q* 는 질문 요청 · r-p* 는 파일 올리기 확인 요청(key server-put:*) · r-gone 은 없는 요청 · r-err 는 읽기 실패 · 나머지는 서버 명령 확인 요청(key server-cmd:*)
