@@ -291,5 +291,6 @@
   "Fix PR auto review stopping after 2 reviews — up to 3 reviews for every PR": "修复 PR 自动评审 2 次就停止 — 所有 PR 最多 3 次",
   "Fix the pack bar hiding during a core update — shows the last pack list": "修复核心更新期间包栏被隐藏 — 显示上次的包列表",
   "Fix lightweight plans breaking when the title or instructions contain $ — written as typed": "修复标题或指令含 $ 时轻量计划书损坏的问题 — 按原文写入",
-  "Fix PR auto review silently skipping plans with no agent — reason left in plan": "修复自动评审静默跳过无代理计划的 PR — 在计划中记录原因"
+  "Fix PR auto review silently skipping plans with no agent — reason left in plan": "修复自动评审静默跳过无代理计划的 PR — 在计划中记录原因",
+  "Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only": "修复分支 squash 合并后开发版应用核心更新停止的问题 — 仅打包已合并的提交"
 }
