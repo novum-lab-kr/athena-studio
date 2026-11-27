@@ -4,7 +4,7 @@
 # 사용: test/token-usage-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 #
 # 보는 것: 역할 가르기(작업자 머리 · 리뷰어 머리 · 본체 루트 = 아테나 · 본체 하위 폴더 = 기타 · 워크트리 = 작업자) · 한 응답이 여러 줄이어도 한 턴 ·
-# 이어 쓰기로 복사된 응답 · 받은 글은 한 번만 · 기간 밖 줄 빼기 · Bash 하나만 턴과 종류(lead-log · sleep · pane 읽기) ·
+# 이어 쓰기로 복사된 응답 · 받은 글은 한 번만 · 기간 밖 줄 빼기 · Bash 하나만 턴과 종류(lead-log · sleep · pane 읽기) · 답 끝 📝 줄 리드 기록 ·
 # 받은 글(바로 받음 + 대기열)과 끝 알림 · 서브에이전트는 부모 역할 · 가중 비용 비중 · 예상 절감 네 갈래 셈 · 대화 본문을 찍지 않음
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
@@ -22,7 +22,7 @@ const at = (day, hour = 12) => `2026-11-${String(day).padStart(2, '0')}T${String
 const ts = (day, hour) => new Date(at(day, hour)).toISOString()   // 이 컴퓨터 시간대의 날짜로
 const usage = (input, write, read, output, write1h = 0) => ({ input_tokens: input, cache_creation_input_tokens: write, cache_read_input_tokens: read, output_tokens: output, cache_creation: { ephemeral_1h_input_tokens: write1h, ephemeral_5m_input_tokens: write - write1h } })
 const user = (cwd, text, day, uuid) => ({ type: 'user', cwd, uuid, timestamp: ts(day), message: { role: 'user', content: text } })
-const reply = (cwd, id, day, use, tools = []) => ({ type: 'assistant', cwd, timestamp: ts(day), message: { id, role: 'assistant', usage: use, content: tools.map((command, index) => ({ type: 'tool_use', id: `${id}-${index}`, name: command === 'READ' ? 'Read' : 'Bash', input: { command } })) } })
+const reply = (cwd, id, day, use, tools = [], text = '') => ({ type: 'assistant', cwd, timestamp: ts(day), message: { id, role: 'assistant', usage: use, content: [...(text ? [{ type: 'text', text }] : []), ...tools.map((command, index) => ({ type: 'tool_use', id: `${id}-${index}`, name: command === 'READ' ? 'Read' : 'Bash', input: { command } }))] } })
 const queued = (cwd, text, day, uuid) => ({ type: 'attachment', cwd, uuid, timestamp: ts(day), attachment: { type: 'queued_command', prompt: text } })
 const write = (path, rows) => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, rows.map((row) => JSON.stringify(row)).join('\n') + '\n') }
 // 아테나 — 본체 루트 · 응답 L1 은 두 줄(같은 id · 마지막 줄 usage 가 최종) · L2 lead-log · L3 sleep · L4 pane 읽기 · L5 Bash 둘 · L6 기간 밖
@@ -44,7 +44,8 @@ write(join(proj, 'lead/s-lead.jsonl'), [
 write(join(proj, 'lead/s-lead2.jsonl'), [
   reply(body, 'L1', 20, usage(10, 100, 1000, 20), ['READ']),
   user(body, '[athena-studio-fe → 아테나] 끝 · p1l4 · 계획서 plans/task/a.md — 요약: x', 21, 'r1'),
-  reply(body, 'L7', 22, usage(0, 0, 0, 0), []),
+  // L7 — 답 끝 📝 줄 2(정정 · 전각 콜론 사실) · 코드 블록 안 예시 · 모르는 종류는 안 센다
+  reply(body, 'L7', 22, usage(0, 0, 0, 0), [], '끝냈습니다.\n```\n📝 결정: 예시\n```\n📝 정정: 금요일 배포 안 함\n  📝 사실： 태그가 다시 생김\n📝 아무거나: x'),
   // 예상 절감 — 쉬던 아테나를 깨운 끝 알림 r4 → L8 send-text(p2a1) → 확인 턴 L9 sleep · L10 내 pane 읽기 → L11 Read → L12 남의 pane(p9z1) 읽기
   user(body, '[athena-studio-fe → 아테나] 끝 · p3b1 · 계획서 plans/task/b.md', 22, 'r4'),
   reply(body, 'L8', 22, usage(0, 0, 0, 10), ["scripts/screen pane send-text p2a1 '[아테나 → fe] 고쳐' --enter"]),
@@ -66,7 +67,7 @@ write(join(proj, 'worker/s-r1.jsonl'), [
 ])
 write(join(proj, 'worker/s-w2.jsonl'), [
   user(tree, '이어서 — Checkpoint 부터', 20, 'w9'),
-  reply(tree, 'W3', 20, usage(0, 0, 0, 100), ['git status']),
+  reply(tree, 'W3', 20, usage(0, 0, 0, 100), ['git status'], '📝 결정: 작업자 답은 리드 기록이 아니다'),
 ])
 // 기타 — 본체 하위 폴더 · 스튜디오 밖
 write(join(proj, 'other/s-o1.jsonl'), [reply(join(body, 'scripts/qa'), 'O1', 20, usage(0, 0, 0, 100), [])])
@@ -93,6 +94,7 @@ check "아테나 Bash 하나만 7 = lead-log 1 · sleep 2 · pane 읽기 3(Bash 
 check "작업자 Bash 하나만 3 · 그중 sleep 1(sleep 10 && …)" "r.roles.worker.bashOnly.turns === 3 && r.roles.worker.bashOnlyKinds.sleep.turns === 1"
 echo "▶ 받은 글"
 check "아테나가 받은 글 3(바로 받음 r1 · r4 · 대기열 r2 · 복사된 r1 한 번 · 기간 밖 r3 뺌) · 끝 알림 2" "r.roles.lead.received === 3 && r.roles.lead.doneNotices === 2"
+check "답 끝 📝 줄 리드 기록 2(코드 블록 · 모르는 종류 빼고) · 작업자 답의 📝 줄은 안 센다" "r.roles.lead.replyLogs === 2 && r.roles.worker.replyLogs === 0"
 echo "▶ 예상 절감(가중 토큰)"
 # r4: 글자 수 × 0.5 토큰 × 캐시 읽기 0.1 × 뒤 응답 5 + 깨어난 L8 비용 50 · r1 은 뒤 응답이 없어 0
 check "끝 알림 2건 = r4 글 크기 × 뒤 5턴 + 깨운 턴" "r.savings.kinds.doneNotice.count === 2 && r.savings.kinds.doneNotice.weighted === Math.round('[athena-studio-fe → 아테나] 끝 · p3b1 · 계획서 plans/task/b.md'.length * 0.5 * 0.1 * 5 + 50)"
@@ -102,7 +104,7 @@ check "lead-log 만 한 턴 1 = 그 턴 비용 150" "r.savings.kinds.leadLogOnly
 check "남의 pane 읽기 1(p9z1 · 알림 받은 p1l4 는 아님) = 200" "r.savings.kinds.foreignPaneRead.count === 1 && r.savings.kinds.foreignPaneRead.weighted === 200"
 check "합 · 비중" "r.savings.estimate === true && r.savings.weighted === Object.values(r.savings.kinds).reduce((a, x) => a + x.weighted, 0) && r.savings.shareOfLead > r.savings.shareOfAll"
 echo "▶ 출력"
-if printf '%s\n%s' "$JSON" "$TABLE" | grep -q 'SECRET-TEXT\|요약: x\|lead-log.mjs 사실\|고쳐'; then bad "대화 본문 · 명령 글이 출력에 나옴"; else ok "대화 본문 · 명령 글을 찍지 않음"; fi
-printf '%s' "$TABLE" | grep -q '^| 아테나 | 2 | 12 |' && printf '%s' "$TABLE" | grep -q '아테나가 받은 글 3건 · 그중 끝 알림 2건' && printf '%s' "$TABLE" | grep -q '덜 씀 — 추정' && ok "표 줄" || bad "표 줄: $TABLE"
+if printf '%s\n%s' "$JSON" "$TABLE" | grep -q 'SECRET-TEXT\|요약: x\|lead-log.mjs 사실\|고쳐\|금요일 배포'; then bad "대화 본문 · 명령 글이 출력에 나옴"; else ok "대화 본문 · 명령 글을 찍지 않음"; fi
+printf '%s' "$TABLE" | grep -q '^| 아테나 | 2 | 12 |' && printf '%s' "$TABLE" | grep -q '아테나가 받은 글 3건 · 그중 끝 알림 2건' && printf '%s' "$TABLE" | grep -q '답 끝 📝 줄로 남긴 리드 기록 2줄' && printf '%s' "$TABLE" | grep -q '덜 씀 — 추정' && ok "표 줄" || bad "표 줄: $TABLE"
 node "$SRC/scripts/token-usage.mjs" --since 2026-11-22 --until 2026-11-19 --projects "$PROJ" >/dev/null 2>&1; [ $? -eq 2 ] && ok "기간이 거꾸로면 종료 2" || bad "기간 거꾸로 종료 코드"
 exit $FAIL

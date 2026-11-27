@@ -12,7 +12,7 @@
          "곧 압축 — 알게 된 것을 계획서 · 이슈에 적어 두라" 를 모델에게만 한 번 넣는다(압축 뒤 다시 한 번).
          사용자 화면에는 띄우지 않는다(2026-11-06 사용자: 헷갈리니 알리지 말고 적기만) · 글은 "답하기 전에 먼저 적어라" 로
          할 일을 앞에 둔다(Codex 는 사용자 글 뒤에 붙어 "적기만" 을 미뤘다)
-         아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다 · 단계 끝에 새로 시작할지 사용자에게 먼저 묻고 고르면 scripts/lead-fresh.py 를 부르라고 한다(pane 마다 30분 안에 묻거나 지웠으면 빼다 — scripts/lib/lead_fresh_mark.py)
+         아테나 세션에는 리드 기록에도 답 끝 📝 줄로 적으라고 가리킨다(scripts/hooks/lead-log-stop.py 가 받아 lead-log.mjs 로 적는다) · 단계 끝에 새로 시작할지 사용자에게 먼저 묻고 고르면 scripts/lead-fresh.py 를 부르라고 한다(pane 마다 30분 안에 묻거나 지웠으면 빼다 — scripts/lib/lead_fresh_mark.py)
          위임 에이전트 pane(역할 agent — 리뷰어 빼고)에는 묻지 말고 단계 끝에 Checkpoint(Progress · Next · 미커밋 상태 · Blocked)를 갱신한 뒤
          scripts/lead-fresh.py 를 부르라고 한다(2026-11-11 사용자 결정 — 에이전트는 자동 · 묻는 것은 아테나만 · 30분 쉬기 없음 — 새 대화는 문맥이 작아 곧 다시 뜨지 않는다)
          세션 첫 도구 뒤에는 기록에 첫 응답이 아직 없을 수 있어 잠깐(FIRST_WRITE_WAIT) 다시 읽는다
@@ -79,6 +79,10 @@ TRANSCRIPT_TAIL_LIMIT = 16 * 1024 * 1024
 SNAPSHOT_PREFIX = '- Auto snapshot:'
 # 압축 뒤 아테나 세션에 보여 줄 리드 기록 최근 줄 수(scripts/lead-log.mjs)
 LEAD_LOG_TAIL = 15
+# 아테나가 리드 기록을 남기는 법 — 답 끝 줄을 Stop 훅(scripts/hooks/lead-log-stop.py)이 lead-log.mjs 로 적는다.
+#   lead-log 만 부르는 턴이 하루 약 130번이었다(2026-11-27 실측 — 그중 61% 는 기록 뒤 바로 답하고 끝나 다른 호출과 묶을 수 없는 자리) · 같은 날 사용자 결정
+LEAD_LOG_LINE = '`📝 <정정|실패|사실|결정>: <한 줄>`'
+LEAD_LOG_HOW = '차례가 끝날 때 훅이 받아 적는다 — lead-log 를 따로 부르지 않는다'
 # 압축 뒤 안내에 원문으로 다시 싣는 최근 사용자 말 — 개수 · 한 개 글자 상한 · 묶음 전체 글자 상한(넘으면 오래된 것부터 뺀다)
 USER_WORDS_COUNT = 20
 USER_WORD_LIMIT = 300
@@ -296,12 +300,11 @@ def lead_log_note(session: str = '') -> str:
     except OSError:
         lines = []
     lines = own_log_lines(lines, lead_pane(), session)
-    add = f'node {shlex.quote(str(ATHENA_DIR / "scripts/lead-log.mjs"))} <정정|실패|사실|결정> "<한 줄>"'
     if not lines:
-        return f'📝 리드 기록({file})은 아직 비었다 — 사용자 정정 · 실패 원인 · 확인한 사실 · 결정이 생기면 그때 {add} 로 한 줄씩 적는다.'
+        return f'📝 리드 기록({file})은 아직 비었다 — 사용자 정정 · 실패 원인 · 확인한 사실 · 결정이 생기면 그 답 끝에 {LEAD_LOG_LINE} 줄로 적는다({LEAD_LOG_HOW}).'
     recent = '\n'.join(lines[-LEAD_LOG_TAIL:])
     return (f'📝 리드 기록({file}) 최근 {min(len(lines), LEAD_LOG_TAIL)}줄 — 요약에서 빠졌을 수 있는 정정 · 결정이니 계획서보다 먼저 읽는다'
-            f'(새로 생기면 {add}):\n{recent}')
+            f'(새로 생기면 답 끝에 {LEAD_LOG_LINE} 줄 — {LEAD_LOG_HOW}):\n{recent}')
 
 
 def codex_home() -> pathlib.Path:
@@ -859,15 +862,16 @@ def on_warn(payload: dict, codex: bool = False) -> None:
         return
     percent = int(tokens * 100 / window)
     event = payload.get('hook_event_name') or 'PostToolUse'
-    # 아테나는 정정 · 실패 원인 · 확인한 사실 · 결정을 리드 기록에도(scripts/lead-log.mjs)
-    where = '계획서 Checkpoint(Progress · Next · Blocked)나 이슈'
+    # 아테나는 정정 · 실패 원인 · 확인한 사실 · 결정을 리드 기록에도 — 이번 답 끝 📝 줄로(따로 lead-log 턴을 쓰지 않게 · scripts/hooks/lead-log-stop.py)
+    lead_note = ''
     if is_lead():
-        where = (f'리드 기록(node {shlex.quote(str(ATHENA_DIR / "scripts/lead-log.mjs"))} <정정|실패|사실|결정> "<한 줄>" — {lead_log_file()})'
-                 f'과 {where}')
+        lead_note = (f' 정정 · 실패 원인 · 확인한 사실 · 결정은 이번 답 끝에 {LEAD_LOG_LINE} 줄로 리드 기록({lead_log_file()})에 남긴다'
+                     f'({LEAD_LOG_HOW}).')
     # 할 일을 맨 앞에 시키는 말로 — 사용자 글 뒤에 붙는 Codex 는 "적기만" 을 뒤로 미뤄 끝내 적지 않았다(2026-11-06 시험)
     context = (
         f'⚠️ 곧 대화가 압축된다 — 문맥 {tokens:,} 토큰 · 압축 기준 {window:,} 의 {percent}%. '
-        f'이번 턴에서 답하기 전에 먼저, 이번 대화에서 알게 된 사실 · 정한 것 · 다음 할 일을 {where}에 적는다. '
+        '이번 턴에서 답하기 전에 먼저, 이번 대화에서 알게 된 사실 · 정한 것 · 다음 할 일을 계획서 Checkpoint(Progress · Next · Blocked)나 이슈에 적는다.'
+        f'{lead_note} '
         '압축되면 요약만 남아 적지 않은 것은 사라진다. 적은 뒤 하던 일을 이어 가고, 이 알림 자체는 사용자에게 말하지 않는다.'
     )
     # 아테나는 사용자에게 물어 새로 시작할 수 있다(scripts/lead-fresh.py — 2026-11-11 사용자 결정: 묻지 않고 지우면 당황스럽다 → 묻고 지우기).
