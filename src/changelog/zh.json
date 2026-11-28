@@ -294,5 +294,7 @@
   "Fix PR auto review silently skipping plans with no agent — reason left in plan": "修复自动评审静默跳过无代理计划的 PR — 在计划中记录原因",
   "Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix": "修复合并前验证失败时自动评审询问用户 — 将失败原文发给代理修复",
   "Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only": "修复分支 squash 合并后开发版应用核心更新停止的问题 — 仅打包已合并的提交",
-  "Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set": "修复服务器重启 · 环境变量输出命令无需确认即执行的问题"
+  "Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set": "修复服务器重启 · 环境变量输出命令无需确认即执行的问题",
+  "Fix PR auto review not re-running after deleting the plan's Auto review line": "修复删除计划书 Auto review 行后自动评审不再运行",
+  "Fix PR · merge setting changes leaving no trace — recorded in the event log": "修复 PR · 合并设置变更不留痕迹 — 记入事件日志"
 }

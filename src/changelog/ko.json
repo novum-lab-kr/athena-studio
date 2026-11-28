@@ -294,5 +294,7 @@
   "Fix PR auto review silently skipping plans with no agent — reason left in plan": "에이전트 없는 계획서의 PR 을 자동 리뷰가 말없이 건너뛰던 것 수정 — 계획서에 이유 남김",
   "Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix": "머지 앞 검증이 실패하면 자동 리뷰가 사용자에게 묻던 것 수정 — 실패 원문을 에이전트에 보내 고치게 함",
   "Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only": "브랜치를 squash 머지한 뒤 개발 앱 코어 업데이트가 멈추던 것 수정 — 머지된 커밋만 번들에 담음",
-  "Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set": "서버 재부팅 · 환경 변수 출력 명령이 확인 없이 돌던 것 수정"
+  "Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set": "서버 재부팅 · 환경 변수 출력 명령이 확인 없이 돌던 것 수정",
+  "Fix PR auto review not re-running after deleting the plan's Auto review line": "계획서 Auto review 줄을 지워도 자동 리뷰가 다시 안 돌던 것 수정",
+  "Fix PR · merge setting changes leaving no trace — recorded in the event log": "PR · 머지 설정이 흔적 없이 바뀌던 것 수정 — 사건 기록에 남김"
 }

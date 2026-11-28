@@ -294,5 +294,7 @@
   "Fix PR auto review silently skipping plans with no agent — reason left in plan": "エージェントのない計画書の PR を自動レビューが黙ってスキップしていたのを修正 — 計画書に理由を記録",
   "Fix PR auto review asking you when the pre-merge check fails — failure sent to the agent to fix": "マージ前の検証が失敗すると自動レビューがユーザーに確認していたのを修正 — 失敗の原文をエージェントに送って修正",
   "Fix the dev app core update stopping after a branch is squash-merged — bundles merged commits only": "ブランチを squash マージした後に開発アプリのコア更新が止まっていたのを修正 — マージ済みのコミットのみバンドル",
-  "Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set": "サーバー再起動 · 環境変数出力コマンドが確認なしで動く問題を修正"
+  "Fix server reboot and env dump commands running unconfirmed — systemctl isolate reboot.target, set": "サーバー再起動 · 環境変数出力コマンドが確認なしで動く問題を修正",
+  "Fix PR auto review not re-running after deleting the plan's Auto review line": "計画書の Auto review 行を消しても自動レビューが再実行されないのを修正",
+  "Fix PR · merge setting changes leaving no trace — recorded in the event log": "PR · マージ設定が痕跡なく変わるのを修正 — イベント記録に残す"
 }

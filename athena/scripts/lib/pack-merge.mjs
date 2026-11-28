@@ -13,6 +13,7 @@
 import { isDeepStrictEqual } from 'node:util'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { logEvent } from './events.mjs'
 import { PackError, packLockDir, takeLock } from './lock.mjs'
 import { lookTarget } from './pack-look.mjs'
 import { mergeModeOf } from './pr-auto.mjs'
@@ -138,6 +139,7 @@ export const setAutoMerge = (where, { id = '', repo = '', auto = '', confirm = '
     if (entry.direct === true) throw new PackError('not-applicable', `${repo} 는 main 직접 레포라 PR 이 없다 — 자동 머지 대상이 아니다`)
     // 바꿀 것 — [키, 넣을 값(null 이면 지우기)]
     const changes = []
+    const before = { ...entry }
     if (auto) changes.push(...AUTO_KEYS[auto])
     if (reviewOn !== null) changes.push(['autoReview', reviewOn ? null : 'false'])
     if (ask !== null) changes.push(['autoMergeConfirm', ask ? null : 'false'])
@@ -153,6 +155,11 @@ export const setAutoMerge = (where, { id = '', repo = '', auto = '', confirm = '
     const temp = `${file}.${process.pid}.tmp`
     writeFileSync(temp, text)
     renameSync(temp, file)
+    // 바뀐 키만 사건으로 — ⚙ 설정 · 모바일 · 명령 어느 길로 바꿔도 남게(2026-11-27 autoPr:false 가 흔적 없이 사라져 누가 바꿨는지 못 찾았다)
+    const changed = Object.fromEntries([...new Set(changes.map(([key]) => key))]
+      .filter((key) => !isDeepStrictEqual(before[key], entry[key]))
+      .map((key) => [key, { from: before[key] ?? null, to: entry[key] ?? null }]))
+    if (Object.keys(changed).length) logEvent(where.root, 'pack.auto-merge-set', { id: target.id, repo, changed, agent: process.env.ATHENA_AGENT || null })
     return { ok: true, id: target.id, repo, autoMerge: entry.autoMerge === true, autoPr: entry.autoPr !== false, autoMergeConfirm: entry.autoMergeConfirm !== false, autoReview: entry.autoReview !== false, mergeMode: mergeModeOf(entry) }
   }
   // 여러 팩 구조 — 팩 작업 잠금 안에서(열기 · 업데이트 · 이름 바꾸기와 겹치지 않게)
